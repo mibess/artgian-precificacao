@@ -8,6 +8,7 @@ import { SettingsView } from "./components/SettingsView";
 import { SimulatorView } from "./components/SimulatorView";
 import { QuoteModal } from "./components/QuoteModal";
 import { exportToExcel } from "./utils/excelIO";
+import { LoginScreen } from "./components/LoginScreen";
 import {
   isSupabaseConfigured,
   fetchProductsFromCloud,
@@ -82,6 +83,25 @@ export function App() {
   });
   const [quoteProduct, setQuoteProduct] = useState<ProductItem | null>(null);
   const [quoteMargin, setQuoteMargin] = useState<number>(1.0);
+
+  // Autenticação de Administrador
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    const savedUser = localStorage.getItem("artgian_auth_user");
+    const expectedUser = import.meta.env.VITE_ADMIN_USERNAME || "artgian";
+    return savedUser === expectedUser;
+  });
+
+  const handleLoginSuccess = (user: string) => {
+    localStorage.setItem("artgian_auth_user", user);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    if (window.confirm("Deseja realmente sair do sistema?")) {
+      localStorage.removeItem("artgian_auth_user");
+      setIsAuthenticated(false);
+    }
+  };
 
   // Navegação centralizada que atualiza a URL sem recarregar a página
   const navigateToTab = (tab: TabType, productToEdit?: ProductItem | null, replace = false) => {
@@ -276,6 +296,11 @@ export function App() {
     exportToExcel(products, settings, filaments, printers);
   };
 
+  // Se não estiver autenticado, exige login
+  if (!isAuthenticated) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
       {/* Top Navbar */}
@@ -287,6 +312,7 @@ export function App() {
         onExportExcel={handleExportExcel}
         productsCount={products.length}
         isSyncing={isSyncing}
+        onLogout={handleLogout}
       />
 
       {/* Main Container */}

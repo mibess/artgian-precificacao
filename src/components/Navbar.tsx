@@ -14,7 +14,8 @@ import {
   X,
   RotateCcw,
   SlidersHorizontal,
-  ChevronRight
+  ChevronRight,
+  LogOut
 } from "lucide-react";
 import { GlobalSettings } from "../types/pricing";
 import { isSupabaseConfigured } from "../services/supabase";
@@ -28,6 +29,7 @@ interface NavbarProps {
   onExportExcel: () => void;
   productsCount: number;
   isSyncing?: boolean;
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -37,7 +39,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onNewProduct,
   onExportExcel,
   productsCount,
-  isSyncing = false
+  isSyncing = false,
+  onLogout
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -176,6 +179,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="sm:hidden">Novo</span>
               </button>
 
+              {/* Perfil & Logout */}
+              {onLogout && (
+                <div className="hidden sm:flex items-center gap-1.5 pl-2 border-l border-slate-200">
+                  <div 
+                    title="Conectado como Administrador (artgian)"
+                    className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded-lg text-slate-700 text-xs font-semibold"
+                  >
+                    <div className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[9px] font-bold">
+                      A
+                    </div>
+                    <span className="text-[11px]">artgian</span>
+                  </div>
+                  <button
+                    onClick={onLogout}
+                    title="Sair do sistema (Logout)"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Botão Menu Mobile */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -292,7 +317,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>Insumos, Impressoras & Taxas</span>
           </a>
 
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
             <button
               onClick={() => { onExportExcel(); setMobileMenuOpen(false); }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-700 bg-emerald-50 rounded-lg font-medium"
@@ -300,6 +325,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Exportar Excel</span>
             </button>
+
+            {onLogout && (
+              <button
+                onClick={() => { onLogout(); setMobileMenuOpen(false); }}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs text-rose-600 bg-rose-50 rounded-lg font-medium hover:bg-rose-100"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sair</span>
+              </button>
+            )}
           </div>
         </div>
       )}
