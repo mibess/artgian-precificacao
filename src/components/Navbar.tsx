@@ -1,6 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
 import { 
-  Printer, 
   Layers, 
   PlusCircle, 
   Settings, 
@@ -10,7 +9,12 @@ import {
   Sparkles,
   Cloud,
   CloudOff,
-  Loader2
+  Loader2,
+  Menu,
+  X,
+  RotateCcw,
+  SlidersHorizontal,
+  ChevronRight
 } from "lucide-react";
 import { GlobalSettings } from "../types/pricing";
 import { isSupabaseConfigured } from "../services/supabase";
@@ -36,136 +40,278 @@ export const Navbar: React.FC<NavbarProps> = ({
   productsCount,
   isSyncing = false
 }) => {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          
-          {/* Logo */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab("catalog")}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-100">
-              <Printer className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg text-slate-900 tracking-tight">3DPrice</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">PRO</span>
+    <header className="sticky top-0 z-30 bg-white shadow-xs">
+      {/* 1. BARRA SUPERIOR PRINCIPAL (Header de Navegação Executivo) */}
+      <div className="border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14">
+            
+            {/* Marca / Logo + Status Nuvem */}
+            <div className="flex items-center gap-3">
+              <div 
+                className="flex items-center gap-2.5 cursor-pointer group" 
+                onClick={() => { setActiveTab("catalog"); setMobileMenuOpen(false); }}
+              >
+                <img 
+                  src="/logo-artgian-cropped.png" 
+                  alt="Artgian Studio" 
+                  className="h-8 w-auto object-contain transition-transform group-hover:scale-105"
+                  onError={(e) => {
+                    // Fallback se a imagem cropped não carregar
+                    e.currentTarget.src = "/logo-artgian.png";
+                  }}
+                />
+                <div className="hidden sm:block">
+                  <div className="flex items-center gap-1.5 leading-none">
+                    <span className="font-extrabold text-base text-slate-900 tracking-tight">Artgian</span>
+                    <span className="text-xs font-semibold text-indigo-600">3D</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium">Precificação Studio</p>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-400 font-medium">Precificação Inteligente 3D</p>
+
+              {/* Status de Nuvem Compacto (Supabase) */}
+              <div className="ml-1 pl-3 border-l border-slate-200">
+                {isSupabaseConfigured() ? (
+                  <div 
+                    title={isSyncing ? "Sincronizando dados com o Supabase..." : "Conectado ao Supabase (Sincronização em Nuvem Ativa)"}
+                    className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium"
+                  >
+                    <span className="relative flex h-2 w-2">
+                      {isSyncing && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      )}
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="hidden sm:inline">
+                      {isSyncing ? "Salvando..." : "Nuvem Ativa"}
+                    </span>
+                  </div>
+                ) : (
+                  <div 
+                    title="Armazenamento local ativo"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-[11px] font-medium"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                    <span className="hidden sm:inline">Local</span>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Navegação Central (Desktop) */}
+            <nav className="hidden md:flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/60">
+              <button
+                onClick={() => setActiveTab("catalog")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === "catalog"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Catálogo</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  activeTab === "catalog" 
+                    ? "bg-indigo-50 text-indigo-700" 
+                    : "bg-slate-200/80 text-slate-600"
+                }`}>
+                  {productsCount}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("editor")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === "editor"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Fatiador 3D</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("simulator")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === "simulator"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>Simulador de Margem</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("settings")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === "settings"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Insumos & Taxas</span>
+              </button>
+            </nav>
+
+            {/* Ações da Direita */}
+            <div className="flex items-center gap-2">
+              {/* Botão Primário: Novo Cálculo */}
+              <button
+                onClick={onNewProduct}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-sm rounded-lg transition-all"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span className="hidden sm:inline">Novo Cálculo</span>
+                <span className="sm:hidden">Novo</span>
+              </button>
+
+              {/* Botão Menu Mobile */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                aria-label="Abrir menu"
+              >
+                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+            </div>
+
           </div>
+        </div>
+      </div>
 
-          {/* Nav Tabs */}
-          <nav className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            <button
-              onClick={() => setActiveTab("catalog")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === "catalog"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              Catálogo ({productsCount})
-            </button>
+      {/* 2. BARRA SECUNDÁRIA (Submenu de Parâmetros de Produção & Ferramentas) */}
+      <div className="bg-slate-50/90 border-b border-slate-200/80 text-[11px] text-slate-600">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex items-center justify-between flex-wrap gap-y-1 gap-x-4">
+          
+          {/* Parâmetros Vigentes de Produção */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="flex items-center gap-1 font-medium text-slate-400">
+              <SlidersHorizontal className="w-3 h-3 text-slate-400" />
+              <span>Base:</span>
+            </span>
 
-            <button
-              onClick={() => setActiveTab("editor")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === "editor"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              Novo Produto / Fatiador
-            </button>
+            <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200/90 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>Filamento: <strong className="text-slate-800">R$ {settings.defaultFilamentPricePerKg.toFixed(2)}/kg</strong></span>
+            </div>
 
-            <button
-              onClick={() => setActiveTab("simulator")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === "simulator"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Calculator className="w-4 h-4" />
-              Simulador de Margem
-            </button>
+            <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200/90 shadow-2xs">
+              <Zap className="w-3 h-3 text-amber-500" />
+              <span>Energia: <strong className="text-slate-800">R$ {settings.energyKwhPrice.toFixed(2)}/kWh</strong></span>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200/90 shadow-2xs">
+              <span>Bambu Lab A1: <strong className="text-slate-800">{settings.defaultPrinterWatts}W</strong></span>
+            </div>
 
             <button
               onClick={() => setActiveTab("settings")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === "settings"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
+              className="text-indigo-600 hover:text-indigo-800 font-semibold hover:underline flex items-center gap-0.5 transition-colors"
             >
-              <Settings className="w-4 h-4" />
-              Insumos & Taxas
+              <span>Editar Taxas</span>
+              <ChevronRight className="w-3 h-3" />
             </button>
-          </nav>
+          </div>
 
-          {/* Quick Metrics & Actions */}
-          <div className="flex items-center gap-2.5">
-            {/* Supabase Cloud Status Indicator */}
-            {isSupabaseConfigured() ? (
-              <div 
-                title={isSyncing ? "Sincronizando com Supabase..." : "Conectado ao Supabase (Nuvem Ativa)"}
-                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-[11px] font-semibold"
-              >
-                {isSyncing ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                ) : (
-                  <Cloud className="w-3.5 h-3.5 text-emerald-600" />
-                )}
-                <span>{isSyncing ? "Sincronizando..." : "Nuvem Ativa"}</span>
-              </div>
-            ) : (
-              <div 
-                title="Executando com armazenamento local seguro. Configure o Supabase para sincronização em nuvem."
-                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-500 rounded-lg text-[11px] font-medium"
-              >
-                <CloudOff className="w-3.5 h-3.5 text-slate-400" />
-                <span>Modo Local</span>
-              </div>
-            )}
-
-            {/* Rates pill */}
-            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600">
-              <span className="flex items-center gap-1 font-medium">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                Filamento: <b>R$ {settings.defaultFilamentPricePerKg.toFixed(2)}/kg</b>
-              </span>
-              <span className="text-slate-300">|</span>
-              <span className="flex items-center gap-1 font-medium">
-                <Zap className="w-3 h-3 text-amber-500" />
-                Energia: <b>R$ {settings.energyKwhPrice.toFixed(2)}/kWh</b>
-              </span>
-            </div>
-
-            {/* Export Excel */}
+          {/* Ferramentas e Ações Secundárias */}
+          <div className="flex items-center gap-3">
             <button
               onClick={onExportExcel}
-              title="Baixar planilha Excel (.xlsx) com abas e catálogo"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+              title="Baixar planilha Excel (.xlsx) com catálogo completo e abas"
+              className="flex items-center gap-1 text-slate-600 hover:text-emerald-700 font-semibold transition-colors"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Exportar Excel</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Exportar Excel</span>
             </button>
 
-            {/* Novo Produto */}
+            <span className="text-slate-300">•</span>
+
             <button
-              onClick={onNewProduct}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm rounded-lg transition-all"
+              onClick={onResetDefaults}
+              title="Restaurar dados originais da planilha"
+              className="flex items-center gap-1 text-slate-400 hover:text-rose-600 transition-colors"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span>Novo Cálculo</span>
+              <RotateCcw className="w-3 h-3" />
+              <span>Restaurar Padrões</span>
             </button>
           </div>
 
         </div>
       </div>
+
+      {/* 3. MENU MOBILE DESDOBRÁVEL */}
+      {mobileMenuOpen && (
+        <div className="md:hidden bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-1 shadow-md">
+          <button
+            onClick={() => { setActiveTab("catalog"); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${
+              activeTab === "catalog" ? "bg-indigo-50 text-indigo-700" : "text-slate-600"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4" />
+              <span>Catálogo de Produtos</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+              {productsCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab("editor"); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${
+              activeTab === "editor" ? "bg-indigo-50 text-indigo-700" : "text-slate-600"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>Fatiador 3D & Novo Cálculo</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab("simulator"); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${
+              activeTab === "simulator" ? "bg-indigo-50 text-indigo-700" : "text-slate-600"
+            }`}
+          >
+            <Calculator className="w-4 h-4" />
+            <span>Simulador de Margem Livre</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab("settings"); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${
+              activeTab === "settings" ? "bg-indigo-50 text-indigo-700" : "text-slate-600"
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            <span>Insumos, Impressoras & Taxas</span>
+          </button>
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+            <button
+              onClick={() => { onExportExcel(); setMobileMenuOpen(false); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-700 bg-emerald-50 rounded-lg font-medium"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Exportar Excel</span>
+            </button>
+            <button
+              onClick={() => { onResetDefaults(); setMobileMenuOpen(false); }}
+              className="text-xs text-slate-400 hover:text-rose-600"
+            >
+              Restaurar Padrões
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
 };
+
