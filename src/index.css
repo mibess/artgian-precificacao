@@ -24,6 +24,48 @@ code, pre, .font-mono {
   background: #94a3b8;
 }
 
+/* Animação e Cursor Padrão para Botões (Idêntico ao botão 'Novo Cálculo') */
+button,
+[role="button"],
+nav a,
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              scale 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:active:not(:disabled),
+[role="button"]:active:not([aria-disabled="true"]),
+nav a:active,
+input[type="button"]:active:not(:disabled),
+input[type="submit"]:active:not(:disabled) {
+  scale: 0.95;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+button[disabled],
+input[type="button"]:disabled,
+input[type="submit"]:disabled {
+  cursor: not-allowed !important;
+  scale: 1 !important;
+  opacity: 0.65;
+}
+
+/* Interatividade para selects e labels clicáveis */
+select {
+  cursor: pointer;
+}
+
+
 
 /* Regras de Impressão Profissional A4 */
 @media print {
