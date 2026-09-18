@@ -590,13 +590,16 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     
-                    {/* Peso */}
+                    {/* Peso do Filamento */}
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Peso do Filamento (g)
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                          Peso do Filamento
+                        </label>
+                        <span className="text-[11px] text-slate-400 font-medium">gramas</span>
+                      </div>
                       <div className="relative">
                         <input
                           type="number"
@@ -604,36 +607,46 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                           min="0"
                           value={part.filamentGrams}
                           onChange={(e) => updatePart(index, "filamentGrams", parseFloat(e.target.value) || 0)}
-                          className="w-full pl-3 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                          className="w-full pl-3 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
                         />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-400">g</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">g</span>
                       </div>
                     </div>
 
                     {/* Tempo de impressão flexível */}
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
-                        <span>Tempo de Impressão</span>
-                        <span className="text-[10px] text-indigo-600 font-mono">({part.printTimeHours.toFixed(2)}h)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={part.printTimeString}
-                        onChange={(e) => updatePart(index, "printTimeString", e.target.value)}
-                        placeholder="Ex: 1.4h, 5h40min, 45min"
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-1 focus:ring-indigo-500"
-                      />
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                          Tempo de Impressão
+                        </label>
+                        <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap">
+                          {part.printTimeHours.toFixed(2)}h
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <Clock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={part.printTimeString}
+                          onChange={(e) => updatePart(index, "printTimeString", e.target.value)}
+                          placeholder="Ex: 3h30min, 1.5h, 45min"
+                          className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
+                        />
+                      </div>
                     </div>
 
                     {/* Seletor de Filamento */}
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Filamento Utilizado
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                          Filamento Utilizado
+                        </label>
+                        <span className="text-[11px] text-slate-400 font-medium">custo/kg</span>
+                      </div>
                       <select
                         value={part.filamentId || ""}
                         onChange={(e) => updatePart(index, "filamentId", e.target.value || undefined)}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:ring-1 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
                       >
                         <option value="">Padrão (R$ {settings.defaultFilamentPricePerKg.toFixed(2)}/kg)</option>
                         {filaments.map(f => (
@@ -646,13 +659,16 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
 
                     {/* Seletor de Impressora */}
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Impressora Utilizada
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                          Impressora Utilizada
+                        </label>
+                        <span className="text-[11px] text-slate-400 font-medium">potência</span>
+                      </div>
                       <select
                         value={part.printerId || ""}
                         onChange={(e) => updatePart(index, "printerId", e.target.value || undefined)}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:ring-1 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
                       >
                         <option value="">Padrão ({settings.defaultPrinterWatts} W)</option>
                         {printers.map(p => (
