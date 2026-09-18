@@ -26,7 +26,6 @@ interface SettingsViewProps {
   onSaveSettings: (settings: GlobalSettings) => void;
   onSaveFilaments: (filaments: Filament[]) => void;
   onSavePrinters: (printers: Printer[]) => void;
-  onResetToDefaults: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -35,8 +34,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   printers,
   onSaveSettings,
   onSaveFilaments,
-  onSavePrinters,
-  onResetToDefaults
+  onSavePrinters
 }) => {
   const [localSettings, setLocalSettings] = useState<GlobalSettings>({ ...settings });
   const [localFilaments, setLocalFilaments] = useState<Filament[]>([...filaments]);
@@ -121,15 +119,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onResetToDefaults}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Restaurar Valores da Planilha
-          </button>
-
           <button
             type="button"
             onClick={handleSaveAll}

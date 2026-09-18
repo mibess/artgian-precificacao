@@ -276,17 +276,6 @@ export function App() {
     exportToExcel(products, settings, filaments, printers);
   };
 
-  const handleResetToDefaults = () => {
-    if (window.confirm("Isso restaurará os produtos e configurações iniciais da planilha. Deseja continuar?")) {
-      setProducts(defaultProducts);
-      setSettings(defaultSettings);
-      setFilaments(defaultFilaments);
-      setPrinters(defaultPrinters);
-      localStorage.clear();
-      alert("Configurações restauradas com sucesso!");
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
       {/* Top Navbar */}
@@ -296,7 +285,6 @@ export function App() {
         settings={settings}
         onNewProduct={handleNewProduct}
         onExportExcel={handleExportExcel}
-        onResetDefaults={handleResetToDefaults}
         productsCount={products.length}
         isSyncing={isSyncing}
       />
@@ -352,7 +340,6 @@ export function App() {
             onSaveSettings={handleSaveSettings}
             onSaveFilaments={handleSaveFilaments}
             onSavePrinters={handleSavePrinters}
-            onResetToDefaults={handleResetToDefaults}
           />
         )}
       </main>

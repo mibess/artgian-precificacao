@@ -30,43 +30,33 @@ export function parseTimeToHours(input: string | number): { hours: number; forma
     return { hours: totalHours, formatted: formatHoursToTimeString(totalHours) };
   }
 
-  // Extrair horas e minutos com regex rigoroso usando word boundary (\b)
-  // para NUNCA confundir "A1 mini" com "min"!
+  // Caso compacto "3h30" ou "3h 30" (número + h + minutos sem sufixo min)
+  const compactMatch = str.match(/^(\d+)\s*h\s*(\d{1,2})$/i);
+  if (compactMatch) {
+    const h = parseInt(compactMatch[1], 10);
+    const m = parseInt(compactMatch[2], 10);
+    const totalHours = h + m / 60;
+    return { hours: totalHours, formatted: formatHoursToTimeString(totalHours) };
+  }
+
   let totalMinutes = 0;
   let hasFound = false;
 
-  // Horas decimais ou inteiras: "1.4 h", "1.4h", "5h", "2 horas", "2.5 hrs"
-  const hoursMatch = str.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:h\b|hr\b|hrs\b|hora\b|horas\b)/i);
+  // 1. Horas: "3h", "3.5h", "3h30min", "3 horas", "3 hrs"
+  // Não usa \b após 'h' para não quebrar quando seguido diretamente por dígito como em "3h30min"
+  const hoursMatch = str.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:horas?|hrs?|h)(?=[0-9\s]|$|[^a-zA-Z])/i);
   if (hoursMatch) {
     const hVal = parseFloat(hoursMatch[1].replace(",", "."));
     totalMinutes += hVal * 60;
     hasFound = true;
   }
 
-  // Minutos: "45 min", "45m", "40 minutos" (cuidado: word boundary impede casar "mini")
-  const minMatch = str.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:minutos?\b|mins?\b|m\b)(?!ini)/i);
+  // 2. Minutos: "30min", "30 min", "30m", "30 minutos"
+  const minMatch = str.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:minutos?|mins?|min|m)(?![a-z])/i);
   if (minMatch) {
     const mVal = parseFloat(minMatch[1].replace(",", "."));
     totalMinutes += mVal;
     hasFound = true;
-  }
-
-  // Caso compacto: "5h40" (sem sufixo min)
-  if (!hasFound) {
-    const compactMatch = str.match(/^(\d+)h(\d+)$/i);
-    if (compactMatch) {
-      totalMinutes = parseInt(compactMatch[1], 10) * 60 + parseInt(compactMatch[2], 10);
-      hasFound = true;
-    }
-  }
-
-  // Fallback: número puro seguido de min
-  if (!hasFound) {
-    const pureMinMatch = str.match(/^(\d+)\s*m$/i);
-    if (pureMinMatch) {
-      totalMinutes = parseInt(pureMinMatch[1], 10);
-      hasFound = true;
-    }
   }
 
   const totalHours = totalMinutes / 60;

@@ -26,7 +26,6 @@ interface NavbarProps {
   settings: GlobalSettings;
   onNewProduct: () => void;
   onExportExcel: () => void;
-  onResetDefaults: () => void;
   productsCount: number;
   isSyncing?: boolean;
 }
@@ -37,7 +36,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   settings,
   onNewProduct,
   onExportExcel,
-  onResetDefaults,
   productsCount,
   isSyncing = false
 }) => {
@@ -232,21 +230,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onExportExcel}
               title="Baixar planilha Excel (.xlsx) com catálogo completo e abas"
-              className="flex items-center gap-1 text-slate-600 hover:text-emerald-700 font-semibold transition-colors"
+              className="flex items-center gap-1.5 text-slate-600 hover:text-emerald-700 font-semibold transition-colors"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
               <span>Exportar Excel</span>
-            </button>
-
-            <span className="text-slate-300">•</span>
-
-            <button
-              onClick={onResetDefaults}
-              title="Restaurar dados originais da planilha"
-              className="flex items-center gap-1 text-slate-400 hover:text-rose-600 transition-colors"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Restaurar Padrões</span>
             </button>
           </div>
 
@@ -305,19 +292,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>Insumos, Impressoras & Taxas</span>
           </a>
 
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
             <button
               onClick={() => { onExportExcel(); setMobileMenuOpen(false); }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-700 bg-emerald-50 rounded-lg font-medium"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Exportar Excel</span>
-            </button>
-            <button
-              onClick={() => { onResetDefaults(); setMobileMenuOpen(false); }}
-              className="text-xs text-slate-400 hover:text-rose-600"
-            >
-              Restaurar Padrões
             </button>
           </div>
         </div>
