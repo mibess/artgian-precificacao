@@ -20,6 +20,12 @@ import {
   fetchSettingsFromCloud,
   saveSettingsToCloud
 } from "./services/supabase";
+import { 
+  getTabFromPath, 
+  getPathForTab, 
+  getProductIdFromSearch, 
+  TabType 
+} from "./utils/routes";
 
 export function App() {
   // Estado persistido no LocalStorage (Offline-first)
@@ -58,11 +64,73 @@ export function App() {
   // Estado de sincronização com Supabase
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  // Navegação
-  const [activeTab, setActiveTab] = useState<"catalog" | "editor" | "simulator" | "settings">("catalog");
-  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
+  // Navegação sincronizada com URL e Rotas
+  const [activeTab, setActiveTab] = useState<TabType>(() => getTabFromPath(window.location.pathname));
+  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(() => {
+    const prodId = getProductIdFromSearch(window.location.search);
+    if (prodId) {
+      const saved = localStorage.getItem("3dprice_products");
+      if (saved) {
+        try {
+          const parsed: ProductItem[] = JSON.parse(saved);
+          return parsed.find(p => p.id === prodId) || null;
+        } catch {}
+      }
+      return defaultProducts.find(p => p.id === prodId) || null;
+    }
+    return null;
+  });
   const [quoteProduct, setQuoteProduct] = useState<ProductItem | null>(null);
   const [quoteMargin, setQuoteMargin] = useState<number>(1.0);
+
+  // Navegação centralizada que atualiza a URL sem recarregar a página
+  const navigateToTab = (tab: TabType, productToEdit?: ProductItem | null, replace = false) => {
+    setActiveTab(tab);
+    if (tab !== "editor") {
+      setEditingProduct(null);
+    } else if (productToEdit !== undefined) {
+      setEditingProduct(productToEdit);
+    }
+
+    const newPath = getPathForTab(tab, productToEdit?.id);
+    const currentPath = window.location.pathname + window.location.search;
+
+    if (currentPath !== newPath) {
+      if (replace) {
+        window.history.replaceState({ tab, productId: productToEdit?.id }, "", newPath);
+      } else {
+        window.history.pushState({ tab, productId: productToEdit?.id }, "", newPath);
+      }
+    }
+  };
+
+  // Suporte a histórico do navegador (Voltar / Avançar) e normalização da raiz
+  useEffect(() => {
+    // Se acessar a raiz "/", normaliza a URL para "/catalogo"
+    if (window.location.pathname === "/" || window.location.pathname === "") {
+      window.history.replaceState({ tab: "catalog" }, "", "/catalogo");
+    }
+
+    const handlePopState = () => {
+      const tab = getTabFromPath(window.location.pathname);
+      setActiveTab(tab);
+
+      if (tab === "editor") {
+        const prodId = getProductIdFromSearch(window.location.search);
+        if (prodId) {
+          const found = products.find(p => p.id === prodId);
+          if (found) setEditingProduct(found);
+        } else {
+          setEditingProduct(null);
+        }
+      } else {
+        setEditingProduct(null);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [products]);
 
   // Carregamento inicial do Supabase
   useEffect(() => {
@@ -80,7 +148,15 @@ export function App() {
         ]);
 
         if (!isMounted) return;
-        if (cloudProds && cloudProds.length > 0) setProducts(cloudProds);
+        if (cloudProds && cloudProds.length > 0) {
+          setProducts(cloudProds);
+          // Se tiver um ID de produto na URL, sincroniza o objeto do produto
+          const prodId = getProductIdFromSearch(window.location.search);
+          if (prodId) {
+            const found = cloudProds.find(p => p.id === prodId);
+            if (found) setEditingProduct(found);
+          }
+        }
         if (cloudSettings) setSettings(cloudSettings);
         if (cloudFilaments && cloudFilaments.length > 0) setFilaments(cloudFilaments);
         if (cloudPrinters && cloudPrinters.length > 0) setPrinters(cloudPrinters);
@@ -123,8 +199,7 @@ export function App() {
       }
       return [savedProduct, ...prev];
     });
-    setEditingProduct(null);
-    setActiveTab("catalog");
+    navigateToTab("catalog");
 
     if (isSupabaseConfigured()) {
       setIsSyncing(true);
@@ -190,13 +265,11 @@ export function App() {
   };
 
   const handleEditProduct = (prod: ProductItem) => {
-    setEditingProduct(prod);
-    setActiveTab("editor");
+    navigateToTab("editor", prod);
   };
 
   const handleNewProduct = () => {
-    setEditingProduct(null);
-    setActiveTab("editor");
+    navigateToTab("editor", null);
   };
 
   const handleExportExcel = () => {
@@ -219,7 +292,7 @@ export function App() {
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => navigateToTab(tab)}
         settings={settings}
         onNewProduct={handleNewProduct}
         onExportExcel={handleExportExcel}
@@ -257,8 +330,7 @@ export function App() {
             printers={printers}
             onSave={handleSaveProduct}
             onCancel={() => {
-              setEditingProduct(null);
-              setActiveTab("catalog");
+              navigateToTab("catalog");
             }}
           />
         )}
