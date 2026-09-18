@@ -8,9 +8,21 @@ import { SettingsView } from "./components/SettingsView";
 import { SimulatorView } from "./components/SimulatorView";
 import { QuoteModal } from "./components/QuoteModal";
 import { exportToExcel } from "./utils/excelIO";
+import {
+  isSupabaseConfigured,
+  fetchProductsFromCloud,
+  saveProductToCloud,
+  deleteProductFromCloud,
+  fetchFilamentsFromCloud,
+  saveAllFilamentsToCloud,
+  fetchPrintersFromCloud,
+  saveAllPrintersToCloud,
+  fetchSettingsFromCloud,
+  saveSettingsToCloud
+} from "./services/supabase";
 
 export function App() {
-  // Estado persistido no LocalStorage
+  // Estado persistido no LocalStorage (Offline-first)
   const [products, setProducts] = useState<ProductItem[]>(() => {
     const saved = localStorage.getItem("3dprice_products");
     if (saved) {
@@ -43,13 +55,47 @@ export function App() {
     return defaultPrinters;
   });
 
+  // Estado de sincronização com Supabase
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
   // Navegação
   const [activeTab, setActiveTab] = useState<"catalog" | "editor" | "simulator" | "settings">("catalog");
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [quoteProduct, setQuoteProduct] = useState<ProductItem | null>(null);
   const [quoteMargin, setQuoteMargin] = useState<number>(1.0);
 
-  // Sincronizar com LocalStorage
+  // Carregamento inicial do Supabase
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    let isMounted = true;
+    async function loadCloudData() {
+      setIsSyncing(true);
+      try {
+        const [cloudProds, cloudSettings, cloudFilaments, cloudPrinters] = await Promise.all([
+          fetchProductsFromCloud(),
+          fetchSettingsFromCloud(),
+          fetchFilamentsFromCloud(),
+          fetchPrintersFromCloud()
+        ]);
+
+        if (!isMounted) return;
+        if (cloudProds && cloudProds.length > 0) setProducts(cloudProds);
+        if (cloudSettings) setSettings(cloudSettings);
+        if (cloudFilaments && cloudFilaments.length > 0) setFilaments(cloudFilaments);
+        if (cloudPrinters && cloudPrinters.length > 0) setPrinters(cloudPrinters);
+      } catch (err) {
+        console.warn("[App] Erro na sincronização inicial com nuvem:", err);
+      } finally {
+        if (isMounted) setIsSyncing(false);
+      }
+    }
+
+    loadCloudData();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Sincronizar com LocalStorage para cache instantâneo
   useEffect(() => {
     localStorage.setItem("3dprice_products", JSON.stringify(products));
   }, [products]);
@@ -66,8 +112,8 @@ export function App() {
     localStorage.setItem("3dprice_printers", JSON.stringify(printers));
   }, [printers]);
 
-  // Ações de Produtos
-  const handleSaveProduct = (savedProduct: ProductItem) => {
+  // Ações de Produtos com sincronização em nuvem
+  const handleSaveProduct = async (savedProduct: ProductItem) => {
     setProducts(prev => {
       const idx = prev.findIndex(p => p.id === savedProduct.id);
       if (idx >= 0) {
@@ -79,9 +125,15 @@ export function App() {
     });
     setEditingProduct(null);
     setActiveTab("catalog");
+
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      await saveProductToCloud(savedProduct);
+      setIsSyncing(false);
+    }
   };
 
-  const handleDuplicateProduct = (prod: ProductItem) => {
+  const handleDuplicateProduct = async (prod: ProductItem) => {
     const duplicated: ProductItem = {
       ...prod,
       id: `prod-${Date.now()}`,
@@ -91,11 +143,49 @@ export function App() {
       updatedAt: new Date().toISOString()
     };
     setProducts(prev => [duplicated, ...prev]);
+
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      await saveProductToCloud(duplicated);
+      setIsSyncing(false);
+    }
   };
 
-  const handleDeleteProduct = (productId: string) => {
+  const handleDeleteProduct = async (productId: string) => {
     if (window.confirm("Deseja realmente excluir este produto?")) {
       setProducts(prev => prev.filter(p => p.id !== productId));
+      if (isSupabaseConfigured()) {
+        setIsSyncing(true);
+        await deleteProductFromCloud(productId);
+        setIsSyncing(false);
+      }
+    }
+  };
+
+  const handleSaveSettings = async (newSettings: GlobalSettings) => {
+    setSettings(newSettings);
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      await saveSettingsToCloud(newSettings);
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSaveFilaments = async (newFilaments: Filament[]) => {
+    setFilaments(newFilaments);
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      await saveAllFilamentsToCloud(newFilaments);
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSavePrinters = async (newPrinters: Printer[]) => {
+    setPrinters(newPrinters);
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      await saveAllPrintersToCloud(newPrinters);
+      setIsSyncing(false);
     }
   };
 
@@ -135,6 +225,7 @@ export function App() {
         onExportExcel={handleExportExcel}
         onResetDefaults={handleResetToDefaults}
         productsCount={products.length}
+        isSyncing={isSyncing}
       />
 
       {/* Main Container */}
@@ -186,9 +277,9 @@ export function App() {
             settings={settings}
             filaments={filaments}
             printers={printers}
-            onSaveSettings={setSettings}
-            onSaveFilaments={setFilaments}
-            onSavePrinters={setPrinters}
+            onSaveSettings={handleSaveSettings}
+            onSaveFilaments={handleSaveFilaments}
+            onSavePrinters={handleSavePrinters}
             onResetToDefaults={handleResetToDefaults}
           />
         )}
