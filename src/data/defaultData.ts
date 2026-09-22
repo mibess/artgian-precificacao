@@ -69,7 +69,7 @@ export const defaultProducts: ProductItem[] = [
     ],
     packagingCost: 3.50,
     accessoriesCost: 0,
-    variableCostPercent: 10,
+    variableCostPercent: null,
     notes: "Peça decorativa natalina em PLA Branco",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -92,7 +92,7 @@ export const defaultProducts: ProductItem[] = [
     ],
     packagingCost: 3.00,
     accessoriesCost: 9.60,
-    variableCostPercent: 10,
+    variableCostPercent: null,
     notes: "Lote com 16 chaveiros. Acessórios: 16 argolas a R$ 0,60/un",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -131,7 +131,7 @@ export const defaultProducts: ProductItem[] = [
     ],
     packagingCost: 2.00,
     accessoriesCost: 0,
-    variableCostPercent: 10,
+    variableCostPercent: null,
     notes: "Urso articulado ou multi-peças com 3 partes",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()

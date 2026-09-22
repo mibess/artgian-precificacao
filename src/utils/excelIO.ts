@@ -98,8 +98,10 @@ export function exportToExcel(
     sheetData.push(["Custo Energia", r.energyCost]);
     sheetData.push(["Embalagem", r.packagingCost]);
     sheetData.push(["Acessórios", r.accessoriesCost]);
-    sheetData.push(["Subtotal", r.subtotal]);
-    sheetData.push([`Custo Variável (${r.variableCostPercent}%)`, r.variableCost]);
+    const varLabel = r.isCustomVariableCost
+      ? `Custo Variável (${r.variableCostPercent}% - Personalizado)`
+      : `Custo Variável (${r.variableCostPercent}% - Padrão)`;
+    sheetData.push([varLabel, r.variableCost]);
     sheetData.push(["CUSTO DO PRODUTO", r.totalCost]);
     if (prod.quantityInBatch > 1) {
       sheetData.push(["CUSTO UNITÁRIO", r.unitCost]);

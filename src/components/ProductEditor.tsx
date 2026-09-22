@@ -27,7 +27,8 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Split, 
-  Printer as PrinterIcon 
+  Printer as PrinterIcon,
+  Percent
 } from "lucide-react";
 
 interface ProductEditorProps {
@@ -54,7 +55,18 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   const [isMultiPart, setIsMultiPart] = useState<boolean>(product?.isMultiPart || false);
   const [packagingCost, setPackagingCost] = useState<number>(product?.packagingCost ?? 3.00);
   const [accessoriesCost, setAccessoriesCost] = useState<number>(product?.accessoriesCost ?? 0.00);
-  const [variableCostPercent, setVariableCostPercent] = useState<number>(product?.variableCostPercent ?? 10);
+  
+  // Margem de Perda / Custo Variável: Padrão do Sistema vs Personalizada
+  const [isCustomVariableCost, setIsCustomVariableCost] = useState<boolean>(() => {
+    return typeof product?.variableCostPercent === "number" && product.variableCostPercent !== null;
+  });
+  const [customVariableCostPercent, setCustomVariableCostPercent] = useState<number>(() => {
+    if (typeof product?.variableCostPercent === "number" && product.variableCostPercent !== null) {
+      return product.variableCostPercent;
+    }
+    return settings.defaultVariableCostPercent || 10;
+  });
+
   const [notes, setNotes] = useState(product?.notes || "");
 
   // Partes
@@ -246,7 +258,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
     parts,
     packagingCost: Number(packagingCost) || 0,
     accessoriesCost: Number(accessoriesCost) || 0,
-    variableCostPercent: Number(variableCostPercent) || 0,
+    variableCostPercent: isCustomVariableCost ? (Number(customVariableCostPercent) || 0) : null,
     notes,
     createdAt: product?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -694,7 +706,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
               Embalagem, Acessórios & Custos Indiretos
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -732,25 +744,111 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                 <p className="text-[10px] text-slate-400 mt-1">Argolas, imãs, parafusos, etc.</p>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Margem de Perda / Variável (%)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="50"
-                    value={variableCostPercent}
-                    onChange={(e) => setVariableCostPercent(parseFloat(e.target.value) || 0)}
-                    className="w-full px-3 pr-8 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">%</span>
+            </div>
+
+            {/* Custo Variável / Margem de Falha com Suporte a Personalização */}
+            <div className="p-3.5 bg-slate-50/90 border border-slate-200 rounded-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Percent className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Custo Variável / Margem de Falha</span>
+                  </label>
+                  <p className="text-[10px] text-slate-400">
+                    Percentual sobre o subtotal para cobrir perdas, falhas e descartes.
+                  </p>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Padrão da planilha: 10%</p>
+
+                {/* Seletor de Modo: Padrão vs Personalizada */}
+                <div className="inline-flex p-0.5 bg-slate-200/80 rounded-lg text-xs font-semibold self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomVariableCost(false)}
+                    className={`px-3 py-1 rounded-md transition-all ${
+                      !isCustomVariableCost
+                        ? "bg-white text-indigo-700 shadow-xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Padrão do Sistema ({settings.defaultVariableCostPercent}%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomVariableCost(true);
+                      if (!customVariableCostPercent) {
+                        setCustomVariableCostPercent(settings.defaultVariableCostPercent || 10);
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-md transition-all ${
+                      isCustomVariableCost
+                        ? "bg-indigo-600 text-white shadow-xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Personalizada
+                  </button>
+                </div>
               </div>
 
+              {!isCustomVariableCost ? (
+                <div className="flex items-center justify-between text-xs bg-indigo-50/70 border border-indigo-100 rounded-lg px-3 py-2 text-indigo-900">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <div>
+                      <span className="font-semibold">Utilizando margem padrão global: </span>
+                      <strong className="text-indigo-700 font-extrabold">{settings.defaultVariableCostPercent}%</strong>
+                      <span className="text-[11px] text-indigo-700/80 block">Definida para toda a oficina (editável em Insumos & Taxas).</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomVariableCost(true)}
+                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline shrink-0 ml-2"
+                  >
+                    Personalizar →
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1 max-w-[180px]">
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max="100"
+                        value={customVariableCostPercent}
+                        onChange={(e) => setCustomVariableCostPercent(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 pr-8 py-2 text-sm bg-white border border-indigo-300 rounded-lg font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-600 font-bold">%</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomVariableCost(false)}
+                      className="text-xs text-slate-500 hover:text-slate-700 underline font-medium"
+                    >
+                      Voltar ao padrão ({settings.defaultVariableCostPercent}%)
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    {customVariableCostPercent > settings.defaultVariableCostPercent ? (
+                      <span className="text-amber-700 font-medium">
+                        ⚠️ Margem maior que o padrão (+{(customVariableCostPercent - settings.defaultVariableCostPercent).toFixed(1)}%). Recomendado para peças complexas, com muitos suportes ou risco de empenamento/warping.
+                      </span>
+                    ) : customVariableCostPercent < settings.defaultVariableCostPercent ? (
+                      <span className="text-emerald-700 font-medium">
+                        💡 Margem menor que o padrão (-{(settings.defaultVariableCostPercent - customVariableCostPercent).toFixed(1)}%). Indicado para geometrias simples e impressões já testadas sem falhas.
+                      </span>
+                    ) : (
+                      <span>Margem personalizada com o mesmo valor do padrão atual ({settings.defaultVariableCostPercent}%).</span>
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Observações */}
@@ -831,7 +929,14 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
               </div>
 
               <div className="flex items-center justify-between text-slate-500">
-                <span>Custo Variável ({pricing.variableCostPercent}%):</span>
+                <span className="flex items-center gap-1.5">
+                  <span>Custo Variável ({pricing.variableCostPercent}%):</span>
+                  {pricing.isCustomVariableCost ? (
+                    <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">Personalizado</span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-normal">(Padrão)</span>
+                  )}
+                </span>
                 <span className="font-medium text-slate-700">R$ {pricing.variableCost.toFixed(2)}</span>
               </div>
 

@@ -354,9 +354,18 @@ export const ProductList: React.FC<ProductListProps> = ({
 
                 {/* Footer button */}
                 <div className="p-3 bg-white border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400">
-                    Perda/Var: {pricing.variableCostPercent}%
-                  </span>
+                  <div className="text-[11px] flex items-center gap-1">
+                    <span className="text-slate-400">Perda/Var:</span>
+                    {pricing.isCustomVariableCost ? (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/60 font-bold text-[10px]" title="Margem de falha personalizada para este produto">
+                        {pricing.variableCostPercent}% (Personalizada)
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 font-semibold" title="Margem padrão do sistema">
+                        {pricing.variableCostPercent}% (Padrão)
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={() => onEditProduct(product)}
                     className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 hover:underline"

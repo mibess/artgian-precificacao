@@ -240,6 +240,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Bambu Lab A1: <strong className="text-slate-800">{settings.defaultPrinterWatts}W</strong></span>
             </div>
 
+            <div className="hidden sm:flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200/90 shadow-2xs">
+              <span>Perda Padrão: <strong className="text-slate-800">{settings.defaultVariableCostPercent}%</strong></span>
+            </div>
+
             <a
               href={TAB_ROUTES.settings}
               onClick={(e) => { e.preventDefault(); setActiveTab("settings"); }}

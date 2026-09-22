@@ -206,7 +206,7 @@ export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
               <span className="font-bold text-slate-800">R$ {(pricing.packagingCost + pricing.accessoriesCost).toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-slate-500">
-              <span>Custo Variável / Perda ({pricing.variableCostPercent}%):</span>
+              <span>Custo Variável / Perda ({pricing.variableCostPercent}%{pricing.isCustomVariableCost ? " - Personalizado" : " - Padrão"}):</span>
               <span>R$ {pricing.variableCost.toFixed(2)}</span>
             </div>
             <div className="flex justify-between pt-1 border-t border-slate-200 text-slate-900 font-extrabold">

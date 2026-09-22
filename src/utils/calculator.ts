@@ -151,9 +151,10 @@ export function calculatePricing(
   const accessoriesCost = Number(product.accessoriesCost) || 0;
   const subtotal = totalFilamentCost + totalEnergyCost + packagingCost + accessoriesCost;
 
-  const variableCostPercent = typeof product.variableCostPercent === "number"
-    ? product.variableCostPercent
-    : (settings.defaultVariableCostPercent || 10);
+  const isCustomVariableCost = typeof product.variableCostPercent === "number" && product.variableCostPercent !== null;
+  const variableCostPercent = isCustomVariableCost
+    ? product.variableCostPercent!
+    : (settings.defaultVariableCostPercent ?? 10);
   
   const variableCost = subtotal * (variableCostPercent / 100);
   const totalCost = subtotal + variableCost;
@@ -176,6 +177,7 @@ export function calculatePricing(
     subtotal,
     variableCost,
     variableCostPercent,
+    isCustomVariableCost,
     totalCost,
     unitCost,
     margins

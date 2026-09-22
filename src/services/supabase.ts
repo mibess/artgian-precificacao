@@ -58,7 +58,9 @@ export async function fetchProductsFromCloud(): Promise<ProductItem[] | null> {
       parts: Array.isArray(row.parts) ? row.parts : [],
       packagingCost: Number(row.packaging_cost) || 0,
       accessoriesCost: Number(row.accessories_cost) || 0,
-      variableCostPercent: Number(row.variable_cost_percent) || 10,
+      variableCostPercent: row.variable_cost_percent !== null && row.variable_cost_percent !== undefined
+        ? Number(row.variable_cost_percent)
+        : null,
       notes: row.notes || "",
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.updated_at || new Date().toISOString()
@@ -83,7 +85,7 @@ export async function saveProductToCloud(product: ProductItem): Promise<boolean>
       parts: product.parts,
       packaging_cost: product.packagingCost,
       accessories_cost: product.accessoriesCost,
-      variable_cost_percent: product.variableCostPercent,
+      variable_cost_percent: typeof product.variableCostPercent === "number" ? product.variableCostPercent : null,
       notes: product.notes || "",
       created_at: product.createdAt,
       updated_at: new Date().toISOString()

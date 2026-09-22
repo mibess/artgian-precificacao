@@ -206,7 +206,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">%</span>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Percentual aplicado sobre o subtotal para cobrir falhas e descartes (padrão: 10%)</p>
+              <p className="text-[10px] text-slate-400 mt-1">Percentual base aplicado a todos os produtos que utilizam a margem padrão global do sistema.</p>
             </div>
           </div>
         </div>

@@ -53,7 +53,7 @@ export interface ProductItem {
   parts: ProductPart[];
   packagingCost: number; // e.g. 3.50
   accessoriesCost: number; // e.g. 9.60
-  variableCostPercent: number; // e.g. 10 (%)
+  variableCostPercent?: number | null; // null = usa o padrão global do sistema; number = margem personalizada
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -92,7 +92,9 @@ export interface PricingBreakdown {
   subtotal: number;
   variableCost: number;
   variableCostPercent: number;
+  isCustomVariableCost: boolean;
   totalCost: number; // Custo do Produto no lote
   unitCost: number; // Custo do Produto unitário
   margins: MarginRow[];
 }
+
