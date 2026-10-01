@@ -21,7 +21,9 @@ import {
   Share2, 
   Sparkles,
   ArrowUpDown,
-  FileSpreadsheet
+  FileSpreadsheet,
+  X,
+  RotateCcw
 } from "lucide-react";
 
 interface ProductListProps {
@@ -55,10 +57,23 @@ export const ProductList: React.FC<ProductListProps> = ({
   // Categorias únicas
   const categories = ["all", ...Array.from(new Set(products.map(p => p.category || "Geral")))];
 
-  // Filtro e Busca
+  // Filtro e Busca com suporte a acentuação e categoria
+  const normalizedSearch = searchTerm
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.notes || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const normName = (p.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const normNotes = (p.notes || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const normCategory = (p.category || "Geral").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    const matchesSearch = !normalizedSearch ||
+      normName.includes(normalizedSearch) ||
+      normNotes.includes(normalizedSearch) ||
+      normCategory.includes(normalizedSearch);
+
     const matchesCategory = selectedCategory === "all" || (p.category || "Geral") === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -119,55 +134,81 @@ export const ProductList: React.FC<ProductListProps> = ({
         </div>
       </div>
 
-      {/* Control Bar: Search, Category, Margin Selector & New Button */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Buscar por nome, notas ou categoria..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-          />
-        </div>
+      {/* Control Bar: Search, Category & Margin Selector */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        {/* Linha Principal: Busca e Seletor de Margem */}
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+          
+          {/* Campo de Pesquisa */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, notas ou categoria..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-9 py-2 text-sm text-slate-800 placeholder:text-slate-400 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
+                title="Limpar pesquisa"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
 
-        {/* Categories Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-          {categories.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                selectedCategory === cat
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+          {/* Seletor de Margem Visualizada */}
+          <div className="flex items-center gap-2 sm:border-l sm:border-slate-200 sm:pl-3 justify-between sm:justify-end">
+            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Margem Visualizada:</span>
+            <select
+              value={selectedMargin.toString()}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                if (!isNaN(val)) setSelectedMargin(val);
+              }}
+              className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
             >
-              {cat === "all" ? "Todas Categorias" : cat}
-            </button>
-          ))}
+              {AVAILABLE_MARGIN_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value.toString()}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {/* Margin Preview Selector */}
-        <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-          <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Margem Visualizada:</span>
-          <select
-            value={selectedMargin.toString()}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              if (!isNaN(val)) setSelectedMargin(val);
-            }}
-            className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-          >
-            {AVAILABLE_MARGIN_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value.toString()}>
-                {opt.label}
-              </option>
+        {/* Linha Secundária: Barra de Categorias e Contador */}
+        <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 flex-1 min-w-0">
+            <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-0.5" />
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                  selectedCategory === cat
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {cat === "all" ? "Todas Categorias" : cat}
+              </button>
             ))}
-          </select>
+          </div>
+
+          {/* Feedback de contagem quando filtrado */}
+          {(searchTerm || selectedCategory !== "all") && (
+            <div className="hidden sm:flex items-center gap-1.5 shrink-0 text-xs font-medium text-slate-500">
+              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold text-[11px]">
+                {filteredProducts.length} de {products.length}
+              </span>
+              <span>produtos</span>
+            </div>
+          )}
         </div>
 
       </div>
@@ -180,15 +221,27 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
           <h3 className="text-base font-bold text-slate-800">Nenhum produto encontrado</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
-            {searchTerm ? "Tente alterar os termos de busca ou categoria." : "Cadastre seu primeiro produto manualmente ou importe dados do seu fatiador 3D."}
+            {searchTerm || selectedCategory !== "all"
+              ? `Nenhum produto corresponde aos filtros aplicados${searchTerm ? ` ("${searchTerm}")` : ""}.`
+              : "Cadastre seu primeiro produto manualmente ou importe dados do seu fatiador 3D."}
           </p>
-          <button
-            onClick={onNewProduct}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Criar Novo Produto
-          </button>
+          {(searchTerm || selectedCategory !== "all") ? (
+            <button
+              onClick={() => { setSearchTerm(""); setSelectedCategory("all"); }}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shadow-sm"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Limpar Filtros e Busca
+            </button>
+          ) : (
+            <button
+              onClick={onNewProduct}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Criar Novo Produto
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
