@@ -1,4 +1,4 @@
-import { GlobalSettings, Filament, Printer, ProductItem } from "../types/pricing";
+import { GlobalSettings, Filament, Printer, ProductItem, PackagingItem, CustomPackagingAddon } from "../types/pricing";
 
 export const defaultSettings: GlobalSettings = {
   energyKwhPrice: 1.02,
@@ -48,6 +48,103 @@ export const defaultPrinters: Printer[] = [
   { id: "prn-default-95", name: "Impressora Genérica (95W)", powerWatts: 95, notes: "Potência da planilha de referência" },
   { id: "prn-ender3", name: "Creality Ender 3 V3", powerWatts: 120, notes: "Média nominal ~120W" },
   { id: "prn-k1", name: "Creality K1 / K1C", powerWatts: 150, notes: "Alta velocidade ~150W" }
+];
+
+export const defaultCustomPackagingAddons: CustomPackagingAddon[] = [
+  {
+    id: "addon-cartao-agradecimento",
+    name: "Cartão de Agradecimento",
+    price: 0.50,
+    description: "Cartão impresso com mensagem de carinho e agradecimento",
+    enabledByDefault: true
+  },
+  {
+    id: "addon-fita-cetim",
+    name: "Fita de Cetim / Laço",
+    price: 0.35,
+    description: "Fita decorativa com laço para presente",
+    enabledByDefault: false
+  },
+  {
+    id: "addon-tag-envio",
+    name: "Tag Personalizada",
+    price: 0.25,
+    description: "Tag com logotipo e instrução de cuidados com a peça 3D",
+    enabledByDefault: false
+  }
+];
+
+export const defaultPackagings: PackagingItem[] = [
+  {
+    id: "pkg-caixa-20x15x10",
+    name: "CAIXA PAPELAO 20X15X10",
+    width: 15,
+    height: 10,
+    length: 20,
+    boxPrice: 1.45,
+    bubbleWrapPrice: 0.70,
+    stickerPrice: 0.18,
+    tissuePaperPrice: 0.11,
+    thankYouCardPrice: 0.50,
+    otherPrice: 0.00,
+    otherDescription: ""
+  },
+  {
+    id: "pkg-caixa-14x10x4",
+    name: "CAIXA PAPELAO 14X10X4",
+    width: 10,
+    height: 4,
+    length: 14,
+    boxPrice: 0.68,
+    bubbleWrapPrice: 0.70,
+    stickerPrice: 0.18,
+    tissuePaperPrice: 0.11,
+    thankYouCardPrice: 0.50,
+    otherPrice: 0.00,
+    otherDescription: ""
+  },
+  {
+    id: "pkg-caixa-24x15x10",
+    name: "CAIXA PAPELAO 24X15X10",
+    width: 15,
+    height: 10,
+    length: 24,
+    boxPrice: 1.42,
+    bubbleWrapPrice: 0.70,
+    stickerPrice: 0.18,
+    tissuePaperPrice: 0.11,
+    thankYouCardPrice: 0.50,
+    otherPrice: 0.00,
+    otherDescription: ""
+  },
+  {
+    id: "pkg-caixa-12x12x11",
+    name: "CAIXA DE PAPELAO 12X12X11",
+    width: 12,
+    height: 11,
+    length: 12,
+    boxPrice: 0.88,
+    bubbleWrapPrice: 0.70,
+    stickerPrice: 0.18,
+    tissuePaperPrice: 0.11,
+    thankYouCardPrice: 0.50,
+    otherPrice: 0.00,
+    otherDescription: ""
+  },
+  {
+    id: "pkg-sacola-21x8x17",
+    name: "SACOLINHA AZUL KRAFT 21X8X17",
+    width: 8,
+    height: 17,
+    length: 21,
+    boxPrice: 2.50,
+    bubbleWrapPrice: 0.70,
+    stickerPrice: 0.18,
+    tissuePaperPrice: 0.11,
+    thankYouCardPrice: 0.50,
+    otherPrice: 0.00,
+    otherDescription: ""
+  }
 ];
 
 export const defaultProducts: ProductItem[] = [

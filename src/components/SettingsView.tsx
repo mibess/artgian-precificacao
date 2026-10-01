@@ -1,9 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   GlobalSettings, 
   Filament, 
   Printer, 
-  MarketplaceConfig 
+  MarketplaceConfig,
+  PackagingItem,
+  CustomPackagingAddon,
+  calculatePackagingTotal
 } from "../types/pricing";
 import { 
   Zap, 
@@ -16,30 +19,58 @@ import {
   Save, 
   Check, 
   Info,
-  Layers
+  Layers,
+  Package,
+  Copy,
+  Ruler,
+  Sparkles,
+  HeartHandshake
 } from "lucide-react";
 
 interface SettingsViewProps {
   settings: GlobalSettings;
   filaments: Filament[];
   printers: Printer[];
+  packagings?: PackagingItem[];
+  customAddons?: CustomPackagingAddon[];
   onSaveSettings: (settings: GlobalSettings) => void;
   onSaveFilaments: (filaments: Filament[]) => void;
   onSavePrinters: (printers: Printer[]) => void;
+  onSavePackagings?: (packagings: PackagingItem[]) => void;
+  onSaveCustomAddons?: (customAddons: CustomPackagingAddon[]) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   filaments,
   printers,
+  packagings = [],
+  customAddons = [],
   onSaveSettings,
   onSaveFilaments,
-  onSavePrinters
+  onSavePrinters,
+  onSavePackagings,
+  onSaveCustomAddons
 }) => {
   const [localSettings, setLocalSettings] = useState<GlobalSettings>({ ...settings });
   const [localFilaments, setLocalFilaments] = useState<Filament[]>([...filaments]);
   const [localPrinters, setLocalPrinters] = useState<Printer[]>([...printers]);
+  const [localPackagings, setLocalPackagings] = useState<PackagingItem[]>([...packagings]);
+  const [localCustomAddons, setLocalCustomAddons] = useState<CustomPackagingAddon[]>([...customAddons]);
+  const [packagingActiveTab, setPackagingActiveTab] = useState<"boxes" | "addons">("boxes");
   const [savedFeedback, setSavedFeedback] = useState(false);
+
+  useEffect(() => {
+    if (packagings) {
+      setLocalPackagings([...packagings]);
+    }
+  }, [packagings]);
+
+  useEffect(() => {
+    if (customAddons) {
+      setLocalCustomAddons([...customAddons]);
+    }
+  }, [customAddons]);
 
   // Manipular Filamentos
   const addFilament = () => {
@@ -85,6 +116,78 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setLocalPrinters(localPrinters.filter(p => p.id !== id));
   };
 
+  // Manipular Embalagens
+  const addPackaging = () => {
+    const newPkg: PackagingItem = {
+      id: `pkg-${Date.now()}`,
+      name: "Nova Caixa / Embalagem",
+      width: 15,
+      height: 10,
+      length: 20,
+      boxPrice: 1.50,
+      bubbleWrapPrice: 0.70,
+      stickerPrice: 0.18,
+      tissuePaperPrice: 0.11,
+      thankYouCardPrice: 0.50,
+      otherPrice: 0.00,
+      otherDescription: ""
+    };
+    setLocalPackagings([...localPackagings, newPkg]);
+  };
+
+  const updatePackaging = (index: number, field: keyof PackagingItem, val: any) => {
+    const next = [...localPackagings];
+    next[index] = { ...next[index], [field]: val };
+    setLocalPackagings(next);
+  };
+
+  const duplicatePackaging = (pkg: PackagingItem) => {
+    const duplicated: PackagingItem = {
+      ...pkg,
+      id: `pkg-${Date.now()}`,
+      name: `${pkg.name} (Cópia)`
+    };
+    setLocalPackagings([...localPackagings, duplicated]);
+  };
+
+  const removePackaging = (id: string) => {
+    setLocalPackagings(localPackagings.filter(p => p.id !== id));
+  };
+
+  // Manipular Itens Personalizados Gravados (Addons)
+  const addCustomAddon = () => {
+    const newAddon: CustomPackagingAddon = {
+      id: `addon-${Date.now()}`,
+      name: "Novo Personalizado",
+      price: 0.50,
+      description: ""
+    };
+    setLocalCustomAddons([...localCustomAddons, newAddon]);
+  };
+
+  const updateCustomAddon = (index: number, field: keyof CustomPackagingAddon, val: any) => {
+    const next = [...localCustomAddons];
+    next[index] = { ...next[index], [field]: val };
+    setLocalCustomAddons(next);
+  };
+
+  const removeCustomAddon = (id: string) => {
+    setLocalCustomAddons(localCustomAddons.filter(a => a.id !== id));
+  };
+
+  // Aplicar insumos padrão em todas as caixas
+  const applyStandardInsertsToAllBoxes = () => {
+    const next = localPackagings.map(pkg => ({
+      ...pkg,
+      bubbleWrapPrice: 0.70,
+      stickerPrice: 0.18,
+      tissuePaperPrice: 0.11,
+      thankYouCardPrice: 0.50
+    }));
+    setLocalPackagings(next);
+    alert("Insumos de proteção (Bolha R$ 0,70, Adesivo R$ 0,18, Seda R$ 0,11 e Cartão de Agradecimento R$ 0,50) aplicados em todas as caixas!");
+  };
+
   // Manipular Marketplaces
   const updateMarketplace = (id: string, field: keyof MarketplaceConfig, val: any) => {
     const nextMps = localSettings.marketplaces.map(m => {
@@ -100,6 +203,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onSaveSettings(localSettings);
     onSaveFilaments(localFilaments);
     onSavePrinters(localPrinters);
+    if (onSavePackagings) {
+      onSavePackagings(localPackagings);
+    }
+    if (onSaveCustomAddons) {
+      onSaveCustomAddons(localCustomAddons);
+    }
     setSavedFeedback(true);
     setTimeout(() => setSavedFeedback(false), 3000);
   };
@@ -462,6 +571,409 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Card: Cadastro de Embalagens & Personalizados */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+              <Package className="w-4 h-4 text-amber-600" />
+              Cadastro de Embalagens & Insumos de Envio
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              Cadastre suas caixas com dimensões e custos de proteção (caixa, plástico bolha, adesivo, seda, cartão de agradecimento e personalizados gravados).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            {/* Navegação por Sub-Abas do Card */}
+            <div className="inline-flex p-0.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setPackagingActiveTab("boxes")}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  packagingActiveTab === "boxes"
+                    ? "bg-white text-indigo-700 shadow-xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                📦 Caixas ({localPackagings.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setPackagingActiveTab("addons")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  packagingActiveTab === "addons"
+                    ? "bg-indigo-600 text-white shadow-xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Personalizados Gravados ({localCustomAddons.length})</span>
+              </button>
+            </div>
+
+            {packagingActiveTab === "boxes" && (
+              <button
+                type="button"
+                onClick={addPackaging}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Adicionar Caixa
+              </button>
+            )}
+
+            {packagingActiveTab === "addons" && (
+              <button
+                type="button"
+                onClick={addCustomAddon}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Novo Personalizado
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ================= ABA 1: MODELOS DE CAIXAS ================= */}
+        {packagingActiveTab === "boxes" && (
+          <>
+            {localPackagings.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-500 space-y-2">
+                <Package className="w-8 h-8 text-slate-400 mx-auto" />
+                <p className="text-xs font-semibold">Nenhuma embalagem cadastrada no momento.</p>
+                <button
+                  type="button"
+                  onClick={addPackaging}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline"
+                >
+                  Clique aqui para adicionar sua primeira embalagem
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                    <tr>
+                      <th className="py-2.5 px-3 min-w-[160px]">Nome / Identificação</th>
+                      <th className="py-2.5 px-3 min-w-[210px]">Tamanhos (L × A × C cm)</th>
+                      <th className="py-2.5 px-3">Caixa (R$)</th>
+                      <th className="py-2.5 px-3">Plástico Bolha (R$)</th>
+                      <th className="py-2.5 px-3">Adesivo (R$)</th>
+                      <th className="py-2.5 px-3">Seda (R$)</th>
+                      <th className="py-2.5 px-3 bg-amber-50/60 text-amber-900 border-l border-r border-amber-100">
+                        Cartão Agradecimento (R$)
+                      </th>
+                      <th className="py-2.5 px-3 min-w-[130px]">Outro / Personalizado (R$)</th>
+                      <th className="py-2.5 px-3">Custo Total</th>
+                      <th className="py-2.5 px-3 text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {localPackagings.map((pkg, idx) => {
+                      const total = calculatePackagingTotal(pkg, localCustomAddons);
+                      return (
+                        <tr key={pkg.id} className="hover:bg-slate-50/70 transition-colors">
+                          {/* Nome */}
+                          <td className="py-2.5 px-3">
+                            <input
+                              type="text"
+                              value={pkg.name}
+                              onChange={(e) => updatePackaging(idx, "name", e.target.value)}
+                              placeholder="Ex: CAIXA PAPELAO 20X15X10"
+                              className="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none w-full"
+                            />
+                          </td>
+
+                          {/* Dimensões L x A x C */}
+                          <td className="py-2.5 px-3">
+                            <div className="inline-flex items-center gap-1.5 p-1 bg-slate-100/80 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-700">
+                              <span className="text-[10px] text-slate-400 font-bold pl-0.5">L:</span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                value={pkg.width}
+                                onChange={(e) => updatePackaging(idx, "width", parseFloat(e.target.value) || 0)}
+                                className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                                title="Largura (cm)"
+                              />
+                              <span className="text-slate-300">×</span>
+                              <span className="text-[10px] text-slate-400 font-bold">A:</span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                value={pkg.height}
+                                onChange={(e) => updatePackaging(idx, "height", parseFloat(e.target.value) || 0)}
+                                className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                                title="Altura (cm)"
+                              />
+                              <span className="text-slate-300">×</span>
+                              <span className="text-[10px] text-slate-400 font-bold">C:</span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                value={pkg.length}
+                                onChange={(e) => updatePackaging(idx, "length", parseFloat(e.target.value) || 0)}
+                                className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                                title="Comprimento (cm)"
+                              />
+                              <span className="text-[10px] text-slate-400 pr-0.5">cm</span>
+                            </div>
+                          </td>
+
+                          {/* Valor Caixa */}
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-1 font-bold text-slate-800">
+                              <span className="text-[10px] text-slate-400">R$</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                value={pkg.boxPrice}
+                                onChange={(e) => updatePackaging(idx, "boxPrice", parseFloat(e.target.value) || 0)}
+                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Valor Plástico Bolha */}
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-1 font-bold text-slate-800">
+                              <span className="text-[10px] text-slate-400">R$</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                value={pkg.bubbleWrapPrice}
+                                onChange={(e) => updatePackaging(idx, "bubbleWrapPrice", parseFloat(e.target.value) || 0)}
+                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Valor Adesivo */}
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-1 font-bold text-slate-800">
+                              <span className="text-[10px] text-slate-400">R$</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                value={pkg.stickerPrice}
+                                onChange={(e) => updatePackaging(idx, "stickerPrice", parseFloat(e.target.value) || 0)}
+                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Valor Seda */}
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-1 font-bold text-slate-800">
+                              <span className="text-[10px] text-slate-400">R$</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                value={pkg.tissuePaperPrice}
+                                onChange={(e) => updatePackaging(idx, "tissuePaperPrice", parseFloat(e.target.value) || 0)}
+                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
+                              />
+                            </div>
+                          </td>
+
+                          {/* NOVO FIXO: Cartão de Agradecimento */}
+                          <td className="py-2.5 px-3 bg-amber-50/40 border-l border-r border-amber-100">
+                            <div className="flex items-center gap-1 font-bold text-amber-900">
+                              <span className="text-[10px] text-amber-500">R$</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                value={typeof pkg.thankYouCardPrice === "number" ? pkg.thankYouCardPrice : 0.50}
+                                onChange={(e) => updatePackaging(idx, "thankYouCardPrice", parseFloat(e.target.value) || 0)}
+                                className="w-16 bg-amber-100/60 border border-amber-200 rounded px-1.5 py-0.5 font-bold text-amber-950"
+                                title="Valor do Cartão de Agradecimento incluso"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Outro / Personalizado Avulso */}
+                          <td className="py-2.5 px-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1 font-bold text-slate-800">
+                                <span className="text-[10px] text-slate-400">R$</span>
+                                <input
+                                  type="number"
+                                  step="0.10"
+                                  min="0"
+                                  value={pkg.otherPrice}
+                                  onChange={(e) => updatePackaging(idx, "otherPrice", parseFloat(e.target.value) || 0)}
+                                  className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
+                                />
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Nome item (ex: Fita, Tag)"
+                                value={pkg.otherDescription || ""}
+                                onChange={(e) => updatePackaging(idx, "otherDescription", e.target.value)}
+                                className="w-28 text-[10px] text-slate-500 bg-transparent border-b border-slate-200 focus:border-indigo-500 focus:outline-none"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Custo Total */}
+                          <td className="py-2.5 px-3">
+                            <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-extrabold font-mono text-xs border border-emerald-200 whitespace-nowrap">
+                              R$ {total.toFixed(2)}
+                            </div>
+                          </td>
+
+                          {/* Ações */}
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => duplicatePackaging(pkg)}
+                                title="Duplicar embalagem"
+                                className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removePackaging(pkg.id)}
+                                title="Excluir embalagem"
+                                className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <button
+                type="button"
+                onClick={applyStandardInsertsToAllBoxes}
+                className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer self-start"
+              >
+                ⚡ Aplicar Insumos Padrão (Bolha R$ 0,70, Adesivo R$ 0,18, Seda R$ 0,11 e Cartão R$ 0,50) em Todas as Caixas
+              </button>
+
+              <div className="text-[11px] text-slate-400">
+                Insumos fixos somam <b>R$ 1,49</b> por caixa (0,70 + 0,18 + 0,11 + 0,50)
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ================= ABA 2: PERSONALIZADOS GRAVADOS ================= */}
+        {packagingActiveTab === "addons" && (
+          <div className="space-y-4">
+            <div className="p-3.5 bg-indigo-50/70 border border-indigo-200/60 rounded-xl flex items-start gap-3">
+              <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-indigo-900">
+                <p className="font-bold">Biblioteca de Itens Personalizados & Complementos</p>
+                <p className="text-[11px] text-indigo-700 mt-0.5">
+                  Grave aqui os itens personalizados reutilizáveis da sua loja (como o <b>Cartão de Agradecimento</b>, fitas de cetim, tags com logomarca, mimos e brindes). Ao salvar alterações, esses itens ficam gravados no sistema.
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-3 min-w-[200px]">Nome do Item Personalizado</th>
+                    <th className="py-2.5 px-3 w-36">Preço Unitário (R$)</th>
+                    <th className="py-2.5 px-3">Descrição / Observações</th>
+                    <th className="py-2.5 px-3 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {localCustomAddons.map((addon, idx) => (
+                    <tr key={addon.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <input
+                          type="text"
+                          value={addon.name}
+                          onChange={(e) => updateCustomAddon(idx, "name", e.target.value)}
+                          placeholder="Ex: Cartão de Agradecimento"
+                          className="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none w-full"
+                        />
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-1 font-bold text-slate-800">
+                          <span className="text-[10px] text-slate-400">R$</span>
+                          <input
+                            type="number"
+                            step="0.05"
+                            min="0"
+                            value={addon.price}
+                            onChange={(e) => updateCustomAddon(idx, "price", parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-900"
+                          />
+                        </div>
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <input
+                          type="text"
+                          value={addon.description || ""}
+                          onChange={(e) => updateCustomAddon(idx, "description", e.target.value)}
+                          placeholder="Ex: Mensagem impressa em papel offset 180g"
+                          className="text-slate-600 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none text-[11px] w-full"
+                        />
+                      </td>
+
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => removeCustomAddon(addon.id)}
+                          title="Remover item personalizado"
+                          className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs">
+              <span className="text-slate-500 text-[11px]">
+                💡 Para incluir ou alterar itens, basta editar a tabela e clicar em <b>"Salvar Alterações"</b> no topo da página.
+              </span>
+              <button
+                type="button"
+                onClick={addCustomAddon}
+                className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Adicionar Outro Item
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-lg text-[11px] text-amber-800 flex gap-2">
+          <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <span>
+            <b>Como funciona no Fatiador 3D:</b> Na tela de precificação da peça, o campo <b>Embalagem</b> traz por padrão um seletor com as caixas cadastradas acima, calculando o custo total com precisão (incluindo caixa, bolha, adesivo, seda e o cartão de agradecimento). Caso deseje um valor avulso para um produto específico, basta alternar para a opção <b>Valor Personalizado</b>.
+          </span>
         </div>
       </div>
 

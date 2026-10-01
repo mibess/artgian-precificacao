@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { ProductItem, GlobalSettings, Filament, Printer } from "./types/pricing";
-import { defaultProducts, defaultSettings, defaultFilaments, defaultPrinters } from "./data/defaultData";
+import { ProductItem, GlobalSettings, Filament, Printer, PackagingItem, CustomPackagingAddon } from "./types/pricing";
+import { defaultProducts, defaultSettings, defaultFilaments, defaultPrinters, defaultPackagings, defaultCustomPackagingAddons } from "./data/defaultData";
 import { Navbar } from "./components/Navbar";
 import { ProductList } from "./components/ProductList";
 import { ProductEditor } from "./components/ProductEditor";
@@ -18,6 +18,10 @@ import {
   saveAllFilamentsToCloud,
   fetchPrintersFromCloud,
   saveAllPrintersToCloud,
+  fetchPackagingsFromCloud,
+  saveAllPackagingsToCloud,
+  fetchCustomAddonsFromCloud,
+  saveAllCustomAddonsToCloud,
   fetchSettingsFromCloud,
   saveSettingsToCloud
 } from "./services/supabase";
@@ -60,6 +64,35 @@ export function App() {
       try { return JSON.parse(saved); } catch (e) { console.error(e); }
     }
     return defaultPrinters;
+  });
+
+  const [packagings, setPackagings] = useState<PackagingItem[]>(() => {
+    const saved = localStorage.getItem("3dprice_packagings");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (
+          Array.isArray(parsed) &&
+          parsed.length > 0 &&
+          !parsed.some((p: any) => p.id === "pkg-caixa-p") &&
+          parsed.some((p: any) => typeof p.thankYouCardPrice === "number")
+        ) {
+          return parsed;
+        }
+      } catch (e) { console.error(e); }
+    }
+    return defaultPackagings;
+  });
+
+  const [customAddons, setCustomAddons] = useState<CustomPackagingAddon[]>(() => {
+    const saved = localStorage.getItem("3dprice_packaging_addons");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) { console.error(e); }
+    }
+    return defaultCustomPackagingAddons;
   });
 
   // Estado de sincronização com Supabase
@@ -160,11 +193,13 @@ export function App() {
     async function loadCloudData() {
       setIsSyncing(true);
       try {
-        const [cloudProds, cloudSettings, cloudFilaments, cloudPrinters] = await Promise.all([
+        const [cloudProds, cloudSettings, cloudFilaments, cloudPrinters, cloudPackagings, cloudCustomAddons] = await Promise.all([
           fetchProductsFromCloud(),
           fetchSettingsFromCloud(),
           fetchFilamentsFromCloud(),
-          fetchPrintersFromCloud()
+          fetchPrintersFromCloud(),
+          fetchPackagingsFromCloud(),
+          fetchCustomAddonsFromCloud()
         ]);
 
         if (!isMounted) return;
@@ -180,6 +215,8 @@ export function App() {
         if (cloudSettings) setSettings(cloudSettings);
         if (cloudFilaments && cloudFilaments.length > 0) setFilaments(cloudFilaments);
         if (cloudPrinters && cloudPrinters.length > 0) setPrinters(cloudPrinters);
+        if (cloudPackagings && cloudPackagings.length > 0) setPackagings(cloudPackagings);
+        if (cloudCustomAddons && cloudCustomAddons.length > 0) setCustomAddons(cloudCustomAddons);
       } catch (err) {
         console.warn("[App] Erro na sincronização inicial com nuvem:", err);
       } finally {
@@ -207,6 +244,14 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("3dprice_printers", JSON.stringify(printers));
   }, [printers]);
+
+  useEffect(() => {
+    localStorage.setItem("3dprice_packagings", JSON.stringify(packagings));
+  }, [packagings]);
+
+  useEffect(() => {
+    localStorage.setItem("3dprice_packaging_addons", JSON.stringify(customAddons));
+  }, [customAddons]);
 
   // Ações de Produtos com sincronização em nuvem
   const handleSaveProduct = async (savedProduct: ProductItem) => {
@@ -284,6 +329,24 @@ export function App() {
     }
   };
 
+  const handleSavePackagings = async (newPackagings: PackagingItem[]) => {
+    setPackagings(newPackagings);
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      await saveAllPackagingsToCloud(newPackagings);
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSaveCustomAddons = async (newAddons: CustomPackagingAddon[]) => {
+    setCustomAddons(newAddons);
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      await saveAllCustomAddonsToCloud(newAddons);
+      setIsSyncing(false);
+    }
+  };
+
   const handleEditProduct = (prod: ProductItem) => {
     navigateToTab("editor", prod);
   };
@@ -342,6 +405,8 @@ export function App() {
             settings={settings}
             filaments={filaments}
             printers={printers}
+            packagings={packagings}
+            customAddons={customAddons}
             onSave={handleSaveProduct}
             onCancel={() => {
               navigateToTab("catalog");
@@ -363,9 +428,13 @@ export function App() {
             settings={settings}
             filaments={filaments}
             printers={printers}
+            packagings={packagings}
+            customAddons={customAddons}
             onSaveSettings={handleSaveSettings}
             onSaveFilaments={handleSaveFilaments}
             onSavePrinters={handleSavePrinters}
+            onSavePackagings={handleSavePackagings}
+            onSaveCustomAddons={handleSaveCustomAddons}
           />
         )}
       </main>

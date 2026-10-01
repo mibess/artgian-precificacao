@@ -44,6 +44,67 @@ export interface ProductPart {
   printerWattsOverride?: number;
 }
 
+export interface PackagingCustomItem {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export interface CustomPackagingAddon {
+  id: string;
+  name: string; // Ex: "Cartão de Agradecimento", "Fita de Cetim"
+  price: number; // Ex: 0.50
+  description?: string;
+  enabledByDefault?: boolean;
+}
+
+export interface PackagingItem {
+  id: string;
+  name: string; // Ex: "CAIXA PAPELAO 20X15X10"
+  // Dimensões (cm)
+  width: number; // Largura (cm)
+  height: number; // Altura (cm)
+  length: number; // Comprimento (cm)
+  // Custos unitários dos componentes da embalagem (R$)
+  boxPrice: number; // Valor da caixa
+  bubbleWrapPrice: number; // Valor do plástico bolha
+  stickerPrice: number; // Valor do adesivo
+  tissuePaperPrice: number; // Valor da seda
+  thankYouCardPrice: number; // Valor do cartão de agradecimento (padrão R$ 0,50)
+  otherPrice: number; // Qualquer outro personalizado avulso
+  otherDescription?: string; // Descrição opcional do item personalizado avulso (ex: "Fita de cetim", "Tag")
+  customAddonIds?: string[]; // IDs dos personalizados gravados ativos para esta embalagem
+  customItems?: PackagingCustomItem[]; // Lista dinâmica de itens extras personalizados adicionais
+}
+
+export function calculatePackagingTotal(
+  pkg: PackagingItem,
+  customAddons: CustomPackagingAddon[] = []
+): number {
+  const extras = Array.isArray(pkg.customItems)
+    ? pkg.customItems.reduce((acc, it) => acc + (Number(it.price) || 0), 0)
+    : 0;
+
+  let addonsTotal = 0;
+  if (Array.isArray(pkg.customAddonIds) && customAddons.length > 0) {
+    const map = new Map(customAddons.map(a => [a.id, a.price]));
+    for (const id of pkg.customAddonIds) {
+      addonsTotal += Number(map.get(id)) || 0;
+    }
+  }
+
+  return (
+    (Number(pkg.boxPrice) || 0) +
+    (Number(pkg.bubbleWrapPrice) || 0) +
+    (Number(pkg.stickerPrice) || 0) +
+    (Number(pkg.tissuePaperPrice) || 0) +
+    (Number(pkg.thankYouCardPrice) || 0) +
+    (Number(pkg.otherPrice) || 0) +
+    addonsTotal +
+    extras
+  );
+}
+
 export interface ProductItem {
   id: string;
   name: string;
@@ -51,7 +112,9 @@ export interface ProductItem {
   quantityInBatch: number; // e.g. 1 (Rena), 16 (Chaveiros)
   isMultiPart: boolean;
   parts: ProductPart[];
-  packagingCost: number; // e.g. 3.50
+  packagingCost: number; // e.g. 3.50 (custo total da embalagem considerado na precificação)
+  packagingId?: string | null; // ID da embalagem pré-cadastrada selecionada (se não for personalizada)
+  isCustomPackagingCost?: boolean; // Se true, o usuário inseriu um valor manual customizado
   accessoriesCost: number; // e.g. 9.60
   variableCostPercent?: number | null; // null = usa o padrão global do sistema; number = margem personalizada
   notes?: string;

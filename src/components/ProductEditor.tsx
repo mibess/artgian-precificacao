@@ -4,7 +4,10 @@ import {
   ProductPart, 
   GlobalSettings, 
   Filament, 
-  Printer 
+  Printer,
+  PackagingItem,
+  CustomPackagingAddon,
+  calculatePackagingTotal
 } from "../types/pricing";
 import { calculatePricing, simulateCustomSalePrice } from "../utils/calculator";
 import { parseTimeToHours, formatHoursToTimeString } from "../utils/timeParser";
@@ -28,7 +31,9 @@ import {
   AlertCircle, 
   Split, 
   Printer as PrinterIcon,
-  Percent
+  Percent,
+  Package,
+  Ruler
 } from "lucide-react";
 
 interface ProductEditorProps {
@@ -36,6 +41,8 @@ interface ProductEditorProps {
   settings: GlobalSettings;
   filaments: Filament[];
   printers: Printer[];
+  packagings?: PackagingItem[];
+  customAddons?: CustomPackagingAddon[];
   onSave: (product: ProductItem) => void;
   onCancel: () => void;
 }
@@ -45,6 +52,8 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   settings,
   filaments,
   printers,
+  packagings = [],
+  customAddons = [],
   onSave,
   onCancel
 }) => {
@@ -53,7 +62,48 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   const [category, setCategory] = useState(product?.category || "Decoração");
   const [quantityInBatch, setQuantityInBatch] = useState<number>(product?.quantityInBatch || 1);
   const [isMultiPart, setIsMultiPart] = useState<boolean>(product?.isMultiPart || false);
-  const [packagingCost, setPackagingCost] = useState<number>(product?.packagingCost ?? 3.00);
+
+  // Embalagem: Seleção cadastrada vs Valor personalizado
+  const [selectedPackagingId, setSelectedPackagingId] = useState<string>(() => {
+    if (product?.packagingId) {
+      return product.packagingId;
+    }
+    if (product && typeof product.packagingCost === "number" && packagings.length > 0) {
+      const match = packagings.find(p => Math.abs(calculatePackagingTotal(p, customAddons) - product.packagingCost) < 0.01);
+      if (match) return match.id;
+    }
+    if (packagings.length > 0) {
+      return packagings[0].id;
+    }
+    return "";
+  });
+
+  const [isCustomPackaging, setIsCustomPackaging] = useState<boolean>(() => {
+    if (product?.isCustomPackagingCost === true) {
+      return true;
+    }
+    if (product && typeof product.packagingCost === "number") {
+      const match = packagings.find(p => Math.abs(calculatePackagingTotal(p, customAddons) - product.packagingCost) < 0.01);
+      if (!match && !product.packagingId) {
+        return true;
+      }
+    }
+    if (packagings.length === 0) {
+      return true;
+    }
+    return false;
+  });
+
+  const [packagingCost, setPackagingCost] = useState<number>(() => {
+    if (product && typeof product.packagingCost === "number") {
+      return product.packagingCost;
+    }
+    if (packagings.length > 0) {
+      return calculatePackagingTotal(packagings[0], customAddons);
+    }
+    return 3.00;
+  });
+
   const [accessoriesCost, setAccessoriesCost] = useState<number>(product?.accessoriesCost ?? 0.00);
   
   // Margem de Perda / Custo Variável: Padrão do Sistema vs Personalizada
@@ -257,6 +307,8 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
     isMultiPart,
     parts,
     packagingCost: Number(packagingCost) || 0,
+    packagingId: isCustomPackaging ? null : selectedPackagingId,
+    isCustomPackagingCost: isCustomPackaging,
     accessoriesCost: Number(accessoriesCost) || 0,
     variableCostPercent: isCustomVariableCost ? (Number(customVariableCostPercent) || 0) : null,
     notes,
@@ -267,6 +319,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   // Cálculo ao vivo
   const pricing = calculatePricing(currentProduct, settings, filaments, printers);
   const shopeeConfig = settings.marketplaces.find(m => m.id === "shopee");
+  const selectedPkg = packagings.find(p => p.id === selectedPackagingId) || packagings[0];
 
   // Simulação com preço digitado (Venda Direta e Shopee)
   const numCustomPrice = parseFloat(customPrice.replace(",", ".")) || 0;
@@ -708,22 +761,132 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               
+              {/* Embalagem: Select com Embalagens Cadastradas ou Valor Personalizado */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Embalagem (R$)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">R$</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={packagingCost}
-                    onChange={(e) => setPackagingCost(parseFloat(e.target.value) || 0)}
-                    className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
-                  />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Embalagem</span>
+                  </label>
+                  {packagings.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isCustomPackaging) {
+                          setIsCustomPackaging(false);
+                          const chosen = packagings.find(p => p.id === selectedPackagingId) || packagings[0];
+                          if (chosen) {
+                            setSelectedPackagingId(chosen.id);
+                            setPackagingCost(calculatePackagingTotal(chosen, customAddons));
+                          }
+                        } else {
+                          setIsCustomPackaging(true);
+                        }
+                      }}
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                    >
+                      {isCustomPackaging ? "← Escolher da lista" : "Valor personalizado"}
+                    </button>
+                  )}
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Caixa, plástico bolha, adesivo</p>
+
+                {!isCustomPackaging && packagings.length > 0 ? (
+                  <div className="space-y-2">
+                    <select
+                      value={selectedPackagingId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "__custom__") {
+                          setIsCustomPackaging(true);
+                        } else {
+                          setSelectedPackagingId(val);
+                          const chosen = packagings.find(p => p.id === val);
+                          if (chosen) {
+                            setPackagingCost(calculatePackagingTotal(chosen, customAddons));
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:bg-white transition-all cursor-pointer"
+                    >
+                      {packagings.map((pkg) => {
+                        const total = calculatePackagingTotal(pkg, customAddons);
+                        return (
+                          <option key={pkg.id} value={pkg.id}>
+                            {pkg.name} ({pkg.width}×{pkg.height}×{pkg.length} cm) — R$ {total.toFixed(2)}
+                          </option>
+                        );
+                      })}
+                      <option value="__custom__">✏️ Inserir Valor Personalizado / Manual...</option>
+                    </select>
+
+                    {selectedPkg && (
+                      <div className="p-2.5 bg-amber-50/70 border border-amber-200/60 rounded-lg text-xs space-y-1">
+                        <div className="flex items-center justify-between font-semibold text-amber-950 text-[11px]">
+                          <span className="flex items-center gap-1">
+                            <Ruler className="w-3 h-3 text-amber-600" />
+                            Dimensões: {selectedPkg.width} × {selectedPkg.height} × {selectedPkg.length} cm
+                          </span>
+                          <span className="font-extrabold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded text-[11px]">
+                            Custo: R$ {calculatePackagingTotal(selectedPkg, customAddons).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 flex flex-wrap gap-x-2 gap-y-0.5 pt-0.5">
+                          <span>Caixa: R$ {selectedPkg.boxPrice.toFixed(2)}</span>
+                          <span>• Bolha: R$ {selectedPkg.bubbleWrapPrice.toFixed(2)}</span>
+                          <span>• Adesivo: R$ {selectedPkg.stickerPrice.toFixed(2)}</span>
+                          <span>• Seda: R$ {selectedPkg.tissuePaperPrice.toFixed(2)}</span>
+                          {(selectedPkg.thankYouCardPrice ?? 0) > 0 && (
+                            <span>• Cartão: R$ {(selectedPkg.thankYouCardPrice ?? 0.50).toFixed(2)}</span>
+                          )}
+                          {selectedPkg.otherPrice > 0 && (
+                            <span>• {selectedPkg.otherDescription || "Outro"}: R$ {selectedPkg.otherPrice.toFixed(2)}</span>
+                          )}
+                          {Array.isArray(selectedPkg.customAddonIds) && selectedPkg.customAddonIds.map(addonId => {
+                            const addon = customAddons.find(a => a.id === addonId);
+                            if (!addon) return null;
+                            return (
+                              <span key={addon.id}>• {addon.name}: R$ {addon.price.toFixed(2)}</span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">R$</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={packagingCost}
+                        onChange={(e) => setPackagingCost(parseFloat(e.target.value) || 0)}
+                        className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 border border-amber-300 rounded-lg font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-amber-700 font-medium">Valor avulso personalizado ativo</span>
+                      {packagings.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomPackaging(false);
+                            const chosen = packagings.find(p => p.id === selectedPackagingId) || packagings[0];
+                            if (chosen) {
+                              setSelectedPackagingId(chosen.id);
+                              setPackagingCost(calculatePackagingTotal(chosen, customAddons));
+                            }
+                          }}
+                          className="text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                        >
+                          ← Voltar para opções cadastradas
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
