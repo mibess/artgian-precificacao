@@ -759,15 +759,20 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
               Embalagem, Acessórios & Custos Indiretos
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-4">
               
-              {/* Embalagem: Select com Embalagens Cadastradas ou Valor Personalizado */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Package className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Embalagem</span>
-                  </label>
+              {/* LINHA 1: EMBALAGEM DE ENVIO (Linha Dedicada Exclusiva) */}
+              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/90 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Package className="w-4 h-4 text-amber-600" />
+                      <span>Embalagem de Envio</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Caixa ou sacola utilizada no despacho, incluindo todos os insumos de proteção e envio.
+                    </p>
+                  </div>
                   {packagings.length > 0 && (
                     <button
                       type="button"
@@ -783,91 +788,135 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                           setIsCustomPackaging(true);
                         }
                       }}
-                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer self-start sm:self-auto shadow-2xs"
                     >
-                      {isCustomPackaging ? "← Escolher da lista" : "Valor personalizado"}
+                      {isCustomPackaging ? "← Escolher caixa cadastrada" : "✏️ Inserir valor avulso / manual"}
                     </button>
                   )}
                 </div>
 
                 {!isCustomPackaging && packagings.length > 0 ? (
-                  <div className="space-y-2">
-                    <select
-                      value={selectedPackagingId}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "__custom__") {
-                          setIsCustomPackaging(true);
-                        } else {
-                          setSelectedPackagingId(val);
-                          const chosen = packagings.find(p => p.id === val);
-                          if (chosen) {
-                            setPackagingCost(calculatePackagingTotal(chosen, customAddons));
+                  <div className="space-y-3">
+                    <div>
+                      <select
+                        value={selectedPackagingId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "__custom__") {
+                            setIsCustomPackaging(true);
+                          } else {
+                            setSelectedPackagingId(val);
+                            const chosen = packagings.find(p => p.id === val);
+                            if (chosen) {
+                              setPackagingCost(calculatePackagingTotal(chosen, customAddons));
+                            }
                           }
-                        }
-                      }}
-                      className="w-full px-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:bg-white transition-all cursor-pointer"
-                    >
-                      {packagings.map((pkg) => {
-                        const total = calculatePackagingTotal(pkg, customAddons);
-                        return (
-                          <option key={pkg.id} value={pkg.id}>
-                            {pkg.name} ({pkg.width}×{pkg.height}×{pkg.length} cm) — R$ {total.toFixed(2)}
-                          </option>
-                        );
-                      })}
-                      <option value="__custom__">✏️ Inserir Valor Personalizado / Manual...</option>
-                    </select>
+                        }}
+                        className="w-full px-3.5 py-2.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer shadow-2xs"
+                      >
+                        {packagings.map((pkg) => {
+                          const total = calculatePackagingTotal(pkg, customAddons);
+                          return (
+                            <option key={pkg.id} value={pkg.id}>
+                              {pkg.name} ({pkg.width} × {pkg.height} × {pkg.length} cm) — Custo Total: R$ {total.toFixed(2)}
+                            </option>
+                          );
+                        })}
+                        <option value="__custom__">✏️ Inserir Valor Personalizado / Manual...</option>
+                      </select>
+                    </div>
 
+                    {/* Card Rico de Informações da Embalagem Selecionada */}
                     {selectedPkg && (
-                      <div className="p-2.5 bg-amber-50/70 border border-amber-200/60 rounded-lg text-xs space-y-1">
-                        <div className="flex items-center justify-between font-semibold text-amber-950 text-[11px]">
-                          <span className="flex items-center gap-1">
-                            <Ruler className="w-3 h-3 text-amber-600" />
-                            Dimensões: {selectedPkg.width} × {selectedPkg.height} × {selectedPkg.length} cm
-                          </span>
-                          <span className="font-extrabold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded text-[11px]">
-                            Custo: R$ {calculatePackagingTotal(selectedPkg, customAddons).toFixed(2)}
-                          </span>
+                      <div className="p-4 bg-white border border-amber-200/80 rounded-xl shadow-2xs space-y-3.5">
+                        {/* Cabeçalho do Card da Embalagem */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-sm text-slate-900 tracking-tight">
+                                {selectedPkg.name}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                Caixa Selecionada
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 font-medium">
+                              <Ruler className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Dimensões:</span>
+                              <span className="font-bold text-slate-800">
+                                {selectedPkg.width} cm (Largura) × {selectedPkg.height} cm (Altura) × {selectedPkg.length} cm (Comprimento)
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="bg-emerald-50/80 border border-emerald-200 px-3.5 py-1.5 rounded-xl text-right self-start sm:self-auto">
+                            <span className="block text-[9px] font-bold uppercase tracking-wider text-emerald-800">
+                              Custo Total da Embalagem
+                            </span>
+                            <span className="text-base font-extrabold text-emerald-700 font-mono">
+                              R$ {calculatePackagingTotal(selectedPkg, customAddons).toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-500 flex flex-wrap gap-x-2 gap-y-0.5 pt-0.5">
-                          <span>Caixa: R$ {selectedPkg.boxPrice.toFixed(2)}</span>
-                          <span>• Bolha: R$ {selectedPkg.bubbleWrapPrice.toFixed(2)}</span>
-                          <span>• Adesivo: R$ {selectedPkg.stickerPrice.toFixed(2)}</span>
-                          <span>• Seda: R$ {selectedPkg.tissuePaperPrice.toFixed(2)}</span>
-                          {(selectedPkg.thankYouCardPrice ?? 0) > 0 && (
-                            <span>• Cartão: R$ {(selectedPkg.thankYouCardPrice ?? 0.50).toFixed(2)}</span>
+
+                        {/* Detalhamento dos Componentes Inclusos */}
+                        <div>
+                          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                            Composição do Custo da Embalagem:
+                          </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs">
+                            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
+                              <span className="text-[10px] text-slate-500 block font-medium">📦 Caixa / Sacola</span>
+                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.boxPrice.toFixed(2)}</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
+                              <span className="text-[10px] text-slate-500 block font-medium">🫧 Plástico Bolha</span>
+                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.bubbleWrapPrice.toFixed(2)}</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
+                              <span className="text-[10px] text-slate-500 block font-medium">🏷️ Adesivo</span>
+                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.stickerPrice.toFixed(2)}</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
+                              <span className="text-[10px] text-slate-500 block font-medium">📜 Papel Seda</span>
+                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.tissuePaperPrice.toFixed(2)}</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200/70 space-y-0.5">
+                              <span className="text-[10px] text-amber-900 block font-bold">💌 Cartão Agradecimento</span>
+                              <span className="font-bold text-amber-950 text-xs">R$ {(selectedPkg.thankYouCardPrice ?? 0.50).toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* Itens adicionais e personalizados se houver */}
+                          {((selectedPkg.otherPrice > 0) || (Array.isArray(selectedPkg.customAddonIds) && selectedPkg.customAddonIds.length > 0)) && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+                              <span className="text-[10px] text-slate-400 font-semibold">Personalizados Adicionais:</span>
+                              {selectedPkg.otherPrice > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium text-[11px]">
+                                  <span>✨ {selectedPkg.otherDescription || "Personalizado"}:</span>
+                                  <b className="text-slate-900">R$ {selectedPkg.otherPrice.toFixed(2)}</b>
+                                </span>
+                              )}
+                              {Array.isArray(selectedPkg.customAddonIds) && selectedPkg.customAddonIds.map(addonId => {
+                                const addon = customAddons.find(a => a.id === addonId);
+                                if (!addon) return null;
+                                return (
+                                  <span key={addon.id} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-medium text-[11px] border border-indigo-100">
+                                    <span>✨ {addon.name}:</span>
+                                    <b className="text-indigo-900">R$ {addon.price.toFixed(2)}</b>
+                                  </span>
+                                );
+                              })}
+                            </div>
                           )}
-                          {selectedPkg.otherPrice > 0 && (
-                            <span>• {selectedPkg.otherDescription || "Outro"}: R$ {selectedPkg.otherPrice.toFixed(2)}</span>
-                          )}
-                          {Array.isArray(selectedPkg.customAddonIds) && selectedPkg.customAddonIds.map(addonId => {
-                            const addon = customAddons.find(a => a.id === addonId);
-                            if (!addon) return null;
-                            return (
-                              <span key={addon.id}>• {addon.name}: R$ {addon.price.toFixed(2)}</span>
-                            );
-                          })}
                         </div>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">R$</span>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={packagingCost}
-                        onChange={(e) => setPackagingCost(parseFloat(e.target.value) || 0)}
-                        className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 border border-amber-300 rounded-lg font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-amber-700 font-medium">Valor avulso personalizado ativo</span>
+                  <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-xs font-bold text-slate-800">Valor de Embalagem Manual / Avulso</span>
                       {packagings.length > 0 && (
                         <button
                           type="button"
@@ -879,32 +928,56 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                               setPackagingCost(calculatePackagingTotal(chosen, customAddons));
                             }
                           }}
-                          className="text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer self-start sm:self-auto"
                         >
                           ← Voltar para opções cadastradas
                         </button>
                       )}
                     </div>
+                    <div className="relative max-w-xs">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={packagingCost}
+                        onChange={(e) => setPackagingCost(parseFloat(e.target.value) || 0)}
+                        className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-amber-300 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Este valor personalizado será considerado diretamente no custo da peça.
+                    </p>
                   </div>
                 )}
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Acessórios (R$)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">R$</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={accessoriesCost}
-                    onChange={(e) => setAccessoriesCost(parseFloat(e.target.value) || 0)}
-                    className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
-                  />
+              {/* LINHA 2: ACESSÓRIOS ADICIONAIS (Linha Dedicada Exclusiva - LÓGICA E CAMPOS INTACTOS) */}
+              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/90 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <ShoppingBag className="w-4 h-4 text-emerald-600" />
+                      <span>Acessórios Adicionais</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Argolas de chaveiro, imãs de neodímio, parafusos, correntes e componentes extras.
+                    </p>
+                  </div>
+                  <div className="relative w-full sm:w-48">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={accessoriesCost}
+                      onChange={(e) => setAccessoriesCost(parseFloat(e.target.value) || 0)}
+                      className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-2xs"
+                      placeholder="0.00"
+                    />
+                  </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Argolas, imãs, parafusos, etc.</p>
               </div>
 
             </div>

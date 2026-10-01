@@ -24,7 +24,10 @@ import {
   Copy,
   Ruler,
   Sparkles,
-  HeartHandshake
+  HeartHandshake,
+  ChevronDown,
+  ChevronUp,
+  SlidersHorizontal
 } from "lucide-react";
 
 interface SettingsViewProps {
@@ -60,9 +63,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [packagingActiveTab, setPackagingActiveTab] = useState<"boxes" | "addons">("boxes");
   const [savedFeedback, setSavedFeedback] = useState(false);
 
+  const [standardBubble, setStandardBubble] = useState<number>(() => {
+    return packagings[0]?.bubbleWrapPrice ?? 0.70;
+  });
+  const [standardSticker, setStandardSticker] = useState<number>(() => {
+    return packagings[0]?.stickerPrice ?? 0.18;
+  });
+  const [standardTissue, setStandardTissue] = useState<number>(() => {
+    return packagings[0]?.tissuePaperPrice ?? 0.11;
+  });
+  const [standardCard, setStandardCard] = useState<number>(() => {
+    return packagings[0]?.thankYouCardPrice ?? 0.50;
+  });
+  const [expandedPackagingId, setExpandedPackagingId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (packagings) {
+    if (packagings && packagings.length > 0) {
       setLocalPackagings([...packagings]);
+      if (typeof packagings[0].bubbleWrapPrice === "number") setStandardBubble(packagings[0].bubbleWrapPrice);
+      if (typeof packagings[0].stickerPrice === "number") setStandardSticker(packagings[0].stickerPrice);
+      if (typeof packagings[0].tissuePaperPrice === "number") setStandardTissue(packagings[0].tissuePaperPrice);
+      if (typeof packagings[0].thankYouCardPrice === "number") setStandardCard(packagings[0].thankYouCardPrice);
     }
   }, [packagings]);
 
@@ -176,16 +197,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Aplicar insumos padrão em todas as caixas
-  const applyStandardInsertsToAllBoxes = () => {
+  const applyStandardInsertsToAllBoxes = (
+    bubble = standardBubble,
+    sticker = standardSticker,
+    tissue = standardTissue,
+    card = standardCard
+  ) => {
     const next = localPackagings.map(pkg => ({
       ...pkg,
-      bubbleWrapPrice: 0.70,
-      stickerPrice: 0.18,
-      tissuePaperPrice: 0.11,
-      thankYouCardPrice: 0.50
+      bubbleWrapPrice: bubble,
+      stickerPrice: sticker,
+      tissuePaperPrice: tissue,
+      thankYouCardPrice: card
     }));
     setLocalPackagings(next);
-    alert("Insumos de proteção (Bolha R$ 0,70, Adesivo R$ 0,18, Seda R$ 0,11 e Cartão de Agradecimento R$ 0,50) aplicados em todas as caixas!");
+    alert(`Insumos de proteção (Bolha R$ ${bubble.toFixed(2)}, Adesivo R$ ${sticker.toFixed(2)}, Seda R$ ${tissue.toFixed(2)} e Cartão R$ ${card.toFixed(2)}) aplicados em todas as ${next.length} caixas com sucesso!`);
+  };
+
+  const togglePackagingAddon = (pkgIndex: number, addonId: string) => {
+    const pkg = localPackagings[pkgIndex];
+    const currentAddons = Array.isArray(pkg.customAddonIds) ? pkg.customAddonIds : [];
+    const has = currentAddons.includes(addonId);
+    const nextAddons = has ? currentAddons.filter(id => id !== addonId) : [...currentAddons, addonId];
+    updatePackaging(pkgIndex, "customAddonIds", nextAddons);
   };
 
   // Manipular Marketplaces
@@ -639,7 +673,102 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* ================= ABA 1: MODELOS DE CAIXAS ================= */}
         {packagingActiveTab === "boxes" && (
-          <>
+          <div className="space-y-4">
+            {/* Bloco de Insumos Fixos de Proteção e Envio */}
+            <div className="p-4 bg-gradient-to-r from-amber-50/70 via-orange-50/40 to-slate-50 border border-amber-200/80 rounded-xl space-y-3 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-amber-200/40">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <HeartHandshake className="w-4 h-4 text-amber-600" />
+                    <span>Insumos Fixos de Proteção & Envio (Inclusos em Todas as Caixas)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Custos padrão de proteção que acompanham cada envio (Subtotal fixo: <b className="text-amber-900">R$ {(standardBubble + standardSticker + standardTissue + standardCard).toFixed(2)}</b>).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => applyStandardInsertsToAllBoxes(standardBubble, standardSticker, standardTissue, standardCard)}
+                    className="text-xs font-bold px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    ⚡ Sincronizar Insumos em Todas as Caixas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPackagingActiveTab("addons")}
+                    className="text-xs font-semibold px-2.5 py-1.5 text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+                  >
+                    ✨ Gerenciar Personalizados Extras →
+                  </button>
+                </div>
+              </div>
+
+              {/* 4 Cards de Insumos Fixos Editáveis */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold block">🫧 Plástico Bolha</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-bold">R$</span>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      value={standardBubble}
+                      onChange={(e) => setStandardBubble(parseFloat(e.target.value) || 0)}
+                      className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold block">🏷️ Adesivo Personalizado</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-bold">R$</span>
+                    <input
+                      type="number"
+                      step="0.02"
+                      min="0"
+                      value={standardSticker}
+                      onChange={(e) => setStandardSticker(parseFloat(e.target.value) || 0)}
+                      className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold block">📜 Papel Seda 50x70</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-bold">R$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={standardTissue}
+                      onChange={(e) => setStandardTissue(parseFloat(e.target.value) || 0)}
+                      className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-amber-100/60 p-2.5 rounded-lg border border-amber-300 shadow-2xs space-y-1">
+                  <span className="text-[10px] text-amber-900 font-extrabold block">💌 Cartão de Agradecimento</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-amber-600 font-bold">R$</span>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      value={standardCard}
+                      onChange={(e) => setStandardCard(parseFloat(e.target.value) || 0)}
+                      className="w-full text-xs font-bold text-amber-950 bg-white border border-amber-300 rounded px-1.5 py-0.5 focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Lista e Tabela de Caixas Cadastradas */}
             {localPackagings.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-500 space-y-2">
                 <Package className="w-8 h-8 text-slate-400 mx-auto" />
@@ -653,208 +782,302 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
                     <tr>
-                      <th className="py-2.5 px-3 min-w-[160px]">Nome / Identificação</th>
-                      <th className="py-2.5 px-3 min-w-[210px]">Tamanhos (L × A × C cm)</th>
-                      <th className="py-2.5 px-3">Caixa (R$)</th>
-                      <th className="py-2.5 px-3">Plástico Bolha (R$)</th>
-                      <th className="py-2.5 px-3">Adesivo (R$)</th>
-                      <th className="py-2.5 px-3">Seda (R$)</th>
-                      <th className="py-2.5 px-3 bg-amber-50/60 text-amber-900 border-l border-r border-amber-100">
-                        Cartão Agradecimento (R$)
-                      </th>
-                      <th className="py-2.5 px-3 min-w-[130px]">Outro / Personalizado (R$)</th>
-                      <th className="py-2.5 px-3">Custo Total</th>
-                      <th className="py-2.5 px-3 text-right">Ação</th>
+                      <th className="py-2.5 px-3 min-w-[180px]">Nome da Embalagem / Caixa</th>
+                      <th className="py-2.5 px-3 min-w-[200px]">Tamanhos (L × A × C cm)</th>
+                      <th className="py-2.5 px-3 w-28">Caixa (R$)</th>
+                      <th className="py-2.5 px-3 min-w-[180px]">Proteção & Insumos Inclusos</th>
+                      <th className="py-2.5 px-3 w-28">Custo Total</th>
+                      <th className="py-2.5 px-3 text-right w-24">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 bg-white">
                     {localPackagings.map((pkg, idx) => {
                       const total = calculatePackagingTotal(pkg, localCustomAddons);
+                      const isExpanded = expandedPackagingId === pkg.id;
+                      const protectionSum = (Number(pkg.bubbleWrapPrice) || 0) + 
+                                            (Number(pkg.stickerPrice) || 0) + 
+                                            (Number(pkg.tissuePaperPrice) || 0) + 
+                                            (Number(pkg.thankYouCardPrice) || 0);
+
                       return (
-                        <tr key={pkg.id} className="hover:bg-slate-50/70 transition-colors">
-                          {/* Nome */}
-                          <td className="py-2.5 px-3">
-                            <input
-                              type="text"
-                              value={pkg.name}
-                              onChange={(e) => updatePackaging(idx, "name", e.target.value)}
-                              placeholder="Ex: CAIXA PAPELAO 20X15X10"
-                              className="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none w-full"
-                            />
-                          </td>
+                        <React.Fragment key={pkg.id}>
+                          <tr className={`transition-colors ${isExpanded ? "bg-amber-50/40" : "hover:bg-slate-50/70"}`}>
+                            {/* Nome */}
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="text"
+                                value={pkg.name}
+                                onChange={(e) => updatePackaging(idx, "name", e.target.value)}
+                                placeholder="Ex: CAIXA PAPELAO 20X15X10"
+                                className="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none w-full"
+                              />
+                            </td>
 
-                          {/* Dimensões L x A x C */}
-                          <td className="py-2.5 px-3">
-                            <div className="inline-flex items-center gap-1.5 p-1 bg-slate-100/80 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-700">
-                              <span className="text-[10px] text-slate-400 font-bold pl-0.5">L:</span>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={pkg.width}
-                                onChange={(e) => updatePackaging(idx, "width", parseFloat(e.target.value) || 0)}
-                                className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
-                                title="Largura (cm)"
-                              />
-                              <span className="text-slate-300">×</span>
-                              <span className="text-[10px] text-slate-400 font-bold">A:</span>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={pkg.height}
-                                onChange={(e) => updatePackaging(idx, "height", parseFloat(e.target.value) || 0)}
-                                className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
-                                title="Altura (cm)"
-                              />
-                              <span className="text-slate-300">×</span>
-                              <span className="text-[10px] text-slate-400 font-bold">C:</span>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={pkg.length}
-                                onChange={(e) => updatePackaging(idx, "length", parseFloat(e.target.value) || 0)}
-                                className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
-                                title="Comprimento (cm)"
-                              />
-                              <span className="text-[10px] text-slate-400 pr-0.5">cm</span>
-                            </div>
-                          </td>
+                            {/* Dimensões L x A x C */}
+                            <td className="py-2.5 px-3">
+                              <div className="inline-flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-700">
+                                <span className="text-[10px] text-slate-400 font-bold pl-0.5">L:</span>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="0"
+                                  value={pkg.width}
+                                  onChange={(e) => updatePackaging(idx, "width", parseFloat(e.target.value) || 0)}
+                                  className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                                  title="Largura (cm)"
+                                />
+                                <span className="text-slate-300">×</span>
+                                <span className="text-[10px] text-slate-400 font-bold">A:</span>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="0"
+                                  value={pkg.height}
+                                  onChange={(e) => updatePackaging(idx, "height", parseFloat(e.target.value) || 0)}
+                                  className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                                  title="Altura (cm)"
+                                />
+                                <span className="text-slate-300">×</span>
+                                <span className="text-[10px] text-slate-400 font-bold">C:</span>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="0"
+                                  value={pkg.length}
+                                  onChange={(e) => updatePackaging(idx, "length", parseFloat(e.target.value) || 0)}
+                                  className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                                  title="Comprimento (cm)"
+                                />
+                                <span className="text-[10px] text-slate-400 pr-0.5">cm</span>
+                              </div>
+                            </td>
 
-                          {/* Valor Caixa */}
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-1 font-bold text-slate-800">
-                              <span className="text-[10px] text-slate-400">R$</span>
-                              <input
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                value={pkg.boxPrice}
-                                onChange={(e) => updatePackaging(idx, "boxPrice", parseFloat(e.target.value) || 0)}
-                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
-                              />
-                            </div>
-                          </td>
-
-                          {/* Valor Plástico Bolha */}
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-1 font-bold text-slate-800">
-                              <span className="text-[10px] text-slate-400">R$</span>
-                              <input
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                value={pkg.bubbleWrapPrice}
-                                onChange={(e) => updatePackaging(idx, "bubbleWrapPrice", parseFloat(e.target.value) || 0)}
-                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
-                              />
-                            </div>
-                          </td>
-
-                          {/* Valor Adesivo */}
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-1 font-bold text-slate-800">
-                              <span className="text-[10px] text-slate-400">R$</span>
-                              <input
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                value={pkg.stickerPrice}
-                                onChange={(e) => updatePackaging(idx, "stickerPrice", parseFloat(e.target.value) || 0)}
-                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
-                              />
-                            </div>
-                          </td>
-
-                          {/* Valor Seda */}
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-1 font-bold text-slate-800">
-                              <span className="text-[10px] text-slate-400">R$</span>
-                              <input
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                value={pkg.tissuePaperPrice}
-                                onChange={(e) => updatePackaging(idx, "tissuePaperPrice", parseFloat(e.target.value) || 0)}
-                                className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
-                              />
-                            </div>
-                          </td>
-
-                          {/* NOVO FIXO: Cartão de Agradecimento */}
-                          <td className="py-2.5 px-3 bg-amber-50/40 border-l border-r border-amber-100">
-                            <div className="flex items-center gap-1 font-bold text-amber-900">
-                              <span className="text-[10px] text-amber-500">R$</span>
-                              <input
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                value={typeof pkg.thankYouCardPrice === "number" ? pkg.thankYouCardPrice : 0.50}
-                                onChange={(e) => updatePackaging(idx, "thankYouCardPrice", parseFloat(e.target.value) || 0)}
-                                className="w-16 bg-amber-100/60 border border-amber-200 rounded px-1.5 py-0.5 font-bold text-amber-950"
-                                title="Valor do Cartão de Agradecimento incluso"
-                              />
-                            </div>
-                          </td>
-
-                          {/* Outro / Personalizado Avulso */}
-                          <td className="py-2.5 px-3">
-                            <div className="space-y-1">
+                            {/* Valor Caixa */}
+                            <td className="py-2.5 px-3">
                               <div className="flex items-center gap-1 font-bold text-slate-800">
                                 <span className="text-[10px] text-slate-400">R$</span>
                                 <input
                                   type="number"
-                                  step="0.10"
+                                  step="0.05"
                                   min="0"
-                                  value={pkg.otherPrice}
-                                  onChange={(e) => updatePackaging(idx, "otherPrice", parseFloat(e.target.value) || 0)}
-                                  className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
+                                  value={pkg.boxPrice}
+                                  onChange={(e) => updatePackaging(idx, "boxPrice", parseFloat(e.target.value) || 0)}
+                                  className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold focus:bg-white"
                                 />
                               </div>
-                              <input
-                                type="text"
-                                placeholder="Nome item (ex: Fita, Tag)"
-                                value={pkg.otherDescription || ""}
-                                onChange={(e) => updatePackaging(idx, "otherDescription", e.target.value)}
-                                className="w-28 text-[10px] text-slate-500 bg-transparent border-b border-slate-200 focus:border-indigo-500 focus:outline-none"
-                              />
-                            </div>
-                          </td>
+                            </td>
 
-                          {/* Custo Total */}
-                          <td className="py-2.5 px-3">
-                            <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-extrabold font-mono text-xs border border-emerald-200 whitespace-nowrap">
-                              R$ {total.toFixed(2)}
-                            </div>
-                          </td>
+                            {/* Insumos & Proteção Inclusos */}
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[11px]">
+                                  + R$ {protectionSum.toFixed(2)} fixos
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPackagingId(isExpanded ? null : pkg.id)}
+                                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                  title="Ver e ajustar insumos e personalizados desta caixa"
+                                >
+                                  <SlidersHorizontal className="w-3 h-3" />
+                                  <span>{isExpanded ? "Ocultar" : "Ajustar"}</span>
+                                </button>
+                              </div>
+                            </td>
 
-                          {/* Ações */}
-                          <td className="py-2.5 px-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => duplicatePackaging(pkg)}
-                                title="Duplicar embalagem"
-                                className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => removePackaging(pkg.id)}
-                                title="Excluir embalagem"
-                                className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                            {/* Custo Total */}
+                            <td className="py-2.5 px-3">
+                              <div className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-extrabold font-mono text-xs border border-emerald-200 whitespace-nowrap shadow-2xs">
+                                R$ {total.toFixed(2)}
+                              </div>
+                            </td>
+
+                            {/* Ações */}
+                            <td className="py-2.5 px-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPackagingId(isExpanded ? null : pkg.id)}
+                                  title="Ajustar insumos específicos desta caixa"
+                                  className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                    isExpanded ? "bg-amber-200 text-amber-900" : "text-slate-400 hover:text-indigo-600 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => duplicatePackaging(pkg)}
+                                  title="Duplicar embalagem"
+                                  className="text-slate-400 hover:text-indigo-600 p-1.5 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removePackaging(pkg.id)}
+                                  title="Excluir embalagem"
+                                  className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Linha Expandida: Ajuste fino de Insumos & Personalizados desta Caixa */}
+                          {isExpanded && (
+                            <tr className="bg-amber-50/30">
+                              <td colSpan={6} className="p-4 border-b border-amber-200/50">
+                                <div className="p-4 bg-white border border-amber-200 rounded-xl space-y-3.5 shadow-xs">
+                                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                      <SlidersHorizontal className="w-4 h-4 text-amber-600" />
+                                      <span className="text-xs font-bold text-slate-800">
+                                        Personalização de Insumos para: <b>{pkg.name}</b>
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] text-slate-400">
+                                      Você pode alterar os valores de proteção especificamente para esta caixa ou adicionar itens gravados.
+                                    </span>
+                                  </div>
+
+                                  {/* Grid de Insumos Específicos desta Caixa */}
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                                      <span className="block text-[10px] text-slate-500 font-semibold mb-1">🫧 Plástico Bolha</span>
+                                      <div className="flex items-center gap-1 font-bold text-slate-800">
+                                        <span className="text-[10px] text-slate-400">R$</span>
+                                        <input
+                                          type="number"
+                                          step="0.05"
+                                          min="0"
+                                          value={pkg.bubbleWrapPrice}
+                                          onChange={(e) => updatePackaging(idx, "bubbleWrapPrice", parseFloat(e.target.value) || 0)}
+                                          className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                                      <span className="block text-[10px] text-slate-500 font-semibold mb-1">🏷️ Adesivo</span>
+                                      <div className="flex items-center gap-1 font-bold text-slate-800">
+                                        <span className="text-[10px] text-slate-400">R$</span>
+                                        <input
+                                          type="number"
+                                          step="0.02"
+                                          min="0"
+                                          value={pkg.stickerPrice}
+                                          onChange={(e) => updatePackaging(idx, "stickerPrice", parseFloat(e.target.value) || 0)}
+                                          className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                                      <span className="block text-[10px] text-slate-500 font-semibold mb-1">📜 Papel Seda</span>
+                                      <div className="flex items-center gap-1 font-bold text-slate-800">
+                                        <span className="text-[10px] text-slate-400">R$</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          value={pkg.tissuePaperPrice}
+                                          onChange={(e) => updatePackaging(idx, "tissuePaperPrice", parseFloat(e.target.value) || 0)}
+                                          className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="p-2 rounded-lg bg-amber-50 border border-amber-200">
+                                      <span className="block text-[10px] text-amber-900 font-bold mb-1">💌 Cartão Agradecimento</span>
+                                      <div className="flex items-center gap-1 font-bold text-amber-950">
+                                        <span className="text-[10px] text-amber-600">R$</span>
+                                        <input
+                                          type="number"
+                                          step="0.05"
+                                          min="0"
+                                          value={typeof pkg.thankYouCardPrice === "number" ? pkg.thankYouCardPrice : 0.50}
+                                          onChange={(e) => updatePackaging(idx, "thankYouCardPrice", parseFloat(e.target.value) || 0)}
+                                          className="w-full bg-white border border-amber-300 rounded px-1.5 py-0.5 text-xs font-bold text-amber-950"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Itens Personalizados Gravados Disponíveis */}
+                                  {localCustomAddons.length > 0 && (
+                                    <div className="pt-2 border-t border-slate-100">
+                                      <span className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2">
+                                        Itens Personalizados Gravados da Loja (clique para incluir nesta caixa):
+                                      </span>
+                                      <div className="flex flex-wrap gap-2">
+                                        {localCustomAddons.map((addon) => {
+                                          const isSelected = Array.isArray(pkg.customAddonIds) && pkg.customAddonIds.includes(addon.id);
+                                          return (
+                                            <button
+                                              key={addon.id}
+                                              type="button"
+                                              onClick={() => togglePackagingAddon(idx, addon.id)}
+                                              className={`text-xs px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                                isSelected
+                                                  ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                                                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                                              }`}
+                                            >
+                                              <span>{isSelected ? "✓" : "+"}</span>
+                                              <span>{addon.name}</span>
+                                              <span className={isSelected ? "text-indigo-200" : "text-slate-400 font-normal"}>
+                                                (R$ {addon.price.toFixed(2)})
+                                              </span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Personalizado Avulso Adicional desta Caixa */}
+                                  <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3">
+                                    <span className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                                      Outro Personalizado Avulso:
+                                    </span>
+                                    <input
+                                      type="text"
+                                      placeholder="Descrição (ex: Fita de Cetim Larga, Brinde Especial)"
+                                      value={pkg.otherDescription || ""}
+                                      onChange={(e) => updatePackaging(idx, "otherDescription", e.target.value)}
+                                      className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                    <div className="flex items-center gap-1 font-bold text-slate-800">
+                                      <span className="text-xs text-slate-400">R$</span>
+                                      <input
+                                        type="number"
+                                        step="0.10"
+                                        min="0"
+                                        placeholder="0.00"
+                                        value={pkg.otherPrice}
+                                        onChange={(e) => updatePackaging(idx, "otherPrice", parseFloat(e.target.value) || 0)}
+                                        className="w-20 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:bg-white"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedPackagingId(null)}
+                                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 px-3 py-1 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors cursor-pointer self-end sm:self-auto"
+                                    >
+                                      Concluir
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
@@ -865,17 +1088,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
               <button
                 type="button"
-                onClick={applyStandardInsertsToAllBoxes}
-                className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer self-start"
+                onClick={addPackaging}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors cursor-pointer self-start"
               >
-                ⚡ Aplicar Insumos Padrão (Bolha R$ 0,70, Adesivo R$ 0,18, Seda R$ 0,11 e Cartão R$ 0,50) em Todas as Caixas
+                <Plus className="w-4 h-4" /> Adicionar Outra Caixa
               </button>
 
               <div className="text-[11px] text-slate-400">
-                Insumos fixos somam <b>R$ 1,49</b> por caixa (0,70 + 0,18 + 0,11 + 0,50)
+                Insumos fixos padrão somam <b>R$ {(standardBubble + standardSticker + standardTissue + standardCard).toFixed(2)}</b> (Bolha R$ {standardBubble.toFixed(2)} + Adesivo R$ {standardSticker.toFixed(2)} + Seda R$ {standardTissue.toFixed(2)} + Cartão R$ {standardCard.toFixed(2)})
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* ================= ABA 2: PERSONALIZADOS GRAVADOS ================= */}
