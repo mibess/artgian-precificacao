@@ -9,7 +9,16 @@ import {
   CustomPackagingAddon,
   calculatePackagingTotal
 } from "../types/pricing";
-import { calculatePricing, simulateCustomSalePrice } from "../utils/calculator";
+import {
+  calculatePricing,
+  simulateCustomSalePrice,
+  formatBRL,
+  formatPercent,
+  formatNumber,
+  describeMarketplaceFees,
+  getPrimaryMarketplace
+} from "../utils/calculator";
+import { createId } from "../utils/ids";
 import { parseTimeToHours, formatHoursToTimeString } from "../utils/timeParser";
 import { parseSlicerFile, parseSlicerText, SlicerParseResult } from "../utils/slicerParser";
 import { NumberInput } from "./NumberInput";
@@ -46,6 +55,8 @@ interface ProductEditorProps {
   customAddons?: CustomPackagingAddon[];
   onSave: (product: ProductItem) => void;
   onCancel: () => void;
+  /** Informa ao App se há alterações não salvas (para avisar antes de sair da tela). */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export const ProductEditor: React.FC<ProductEditorProps> = ({
@@ -56,7 +67,8 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   packagings = [],
   customAddons = [],
   onSave,
-  onCancel
+  onCancel,
+  onDirtyChange
 }) => {
   // Estado básico do produto
   const [name, setName] = useState(product?.name || "");
@@ -65,8 +77,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   const [isMultiPart, setIsMultiPart] = useState<boolean>(product?.isMultiPart || false);
 
   // Embalagem: Seleção cadastrada vs Valor personalizado
+  // Embalagem vinculada que ainda existe no cadastro (se foi excluída, usa o valor gravado como avulso)
+  const linkedPackagingExists = Boolean(product?.packagingId && packagings.some(p => p.id === product.packagingId));
+
   const [selectedPackagingId, setSelectedPackagingId] = useState<string>(() => {
-    if (product?.packagingId) {
+    if (product?.packagingId && linkedPackagingExists) {
       return product.packagingId;
     }
     if (product && typeof product.packagingCost === "number" && packagings.length > 0) {
@@ -81,6 +96,9 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
 
   const [isCustomPackaging, setIsCustomPackaging] = useState<boolean>(() => {
     if (product?.isCustomPackagingCost === true) {
+      return true;
+    }
+    if (product?.packagingId && !linkedPackagingExists) {
       return true;
     }
     if (product && typeof product.packagingCost === "number") {
@@ -106,6 +124,12 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   });
 
   const [accessoriesCost, setAccessoriesCost] = useState<number>(product?.accessoriesCost ?? 0.00);
+  const [packagingMode, setPackagingMode] = useState<"perBatch" | "perUnit">(product?.packagingMode === "perUnit" ? "perUnit" : "perBatch");
+  const [laborHours, setLaborHours] = useState<number>(product?.laborHours ?? 0);
+
+  // Id e data de criação estáveis para produtos novos (não mudam a cada renderização)
+  const [productId] = useState<string>(() => product?.id || createId("prod"));
+  const [createdAt] = useState<string>(() => product?.createdAt || new Date().toISOString());
   
   // Margem de Perda / Custo Variável: Padrão do Sistema vs Personalizada
   const [isCustomVariableCost, setIsCustomVariableCost] = useState<boolean>(() => {
@@ -136,14 +160,15 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   );
 
   // Nome dinâmico da impressora da peça principal
+  // (sem impressora vinculada o cálculo usa a potência padrão das configurações)
   const mainPrinterName = useMemo(() => {
     const pId = parts[0]?.printerId;
     if (pId) {
       const found = printers.find(p => p.id === pId);
       if (found) return found.name;
     }
-    if (printers.length > 0) return printers[0].name;
-    return `Padrão (${settings.defaultPrinterWatts} W)`;
+    const watts = parts[0]?.printerWattsOverride || settings.defaultPrinterWatts;
+    return `Impressora padrão (${watts} W)`;
   }, [parts, printers, settings.defaultPrinterWatts]);
 
   // Alternar com segurança para Peça Única consolidando partes se houver mais de uma
@@ -173,7 +198,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
     }
   };
 
-  // Simulação personalizada (Venda Direta ou Shopee)
+  // Simulação personalizada (Venda Direta ou marketplace principal)
   const [customPrice, setCustomPrice] = useState<string>("");
   const [simChannel, setSimChannel] = useState<"direct" | "shopee">("direct");
   const [viewUnitPrices, setViewUnitPrices] = useState<boolean>(false);
@@ -195,6 +220,8 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   }>({ open: false, title: "", designer: "", quickInput: "" });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Helper para atualizar parte
   const updatePart = (index: number, field: keyof ProductPart, value: any) => {
@@ -213,7 +240,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
 
   const addPart = () => {
     const newPart: ProductPart = {
-      id: "part-" + Date.now() + "-" + (parts.length + 1),
+      id: createId("part"),
       name: "Parte " + (parts.length + 1),
       filamentGrams: 10,
       printTimeString: "1h",
@@ -232,21 +259,53 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
     });
   };
 
-  // Importar arquivo do fatiador
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Importar arquivo do fatiador (botão ou arrastar e soltar)
+  const importSlicerFile = async (file: File) => {
+    if (!/\.(gcode|3mf|txt|log)$/i.test(file.name)) {
+      setSlicerFeedback({
+        status: "error",
+        message: `Formato não suportado: "${file.name}". Envie um arquivo .3mf, .gcode ou .txt.`
+      });
+      return;
+    }
 
+    setIsImporting(true);
+    setSlicerFeedback({ status: "idle", message: "" });
     try {
       const result = await parseSlicerFile(file);
       applySlicerResult(result, file.name);
     } catch (err: any) {
       setSlicerFeedback({
         status: "error",
-        message: "Falha ao processar arquivo: " + err.message
+        message: "Falha ao processar arquivo: " + (err?.message || "erro desconhecido")
       });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) importSlicerFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && !isImporting) importSlicerFile(file);
   };
 
   const handlePastedSlicer = () => {
@@ -315,7 +374,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
     // Se detectou quebra de filamentos AMS ou placas
     if (result.partsBreakdown && result.partsBreakdown.length > 1) {
       const newParts: ProductPart[] = result.partsBreakdown.map((p, idx) => ({
-        id: "part-" + Date.now() + "-" + idx,
+        id: createId("part"),
         name: p.name,
         filamentGrams: p.filamentGrams,
         printTimeString: idx === 0 ? result.timeString : "0min",
@@ -345,35 +404,63 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
     }
   };
 
-  // Construir objeto de produto para o cálculo
-  const currentProduct: ProductItem = {
-    id: product?.id || ("prod-" + Date.now()),
+  const selectedPkg = packagings.find(p => p.id === selectedPackagingId) || packagings[0];
+  const isLinkedPackaging = !isCustomPackaging && Boolean(selectedPkg);
+
+  // Construir objeto de produto para o cálculo. Com caixa vinculada, o custo acompanha o cadastro de
+  // embalagens (mesmo valor exibido no catálogo); o snapshot gravado é apenas referência.
+  const currentProduct: ProductItem = useMemo(() => ({
+    id: productId,
     name: name || "Novo Produto",
     category,
     quantityInBatch: Math.max(1, Number(quantityInBatch) || 1),
     isMultiPart,
     parts,
-    packagingCost: Number(packagingCost) || 0,
-    packagingId: isCustomPackaging ? null : selectedPackagingId,
-    isCustomPackagingCost: isCustomPackaging,
+    packagingCost: isLinkedPackaging && selectedPkg
+      ? calculatePackagingTotal(selectedPkg, customAddons)
+      : Number(packagingCost) || 0,
+    packagingId: isLinkedPackaging && selectedPkg ? selectedPkg.id : null,
+    isCustomPackagingCost: !isLinkedPackaging,
+    packagingMode,
     accessoriesCost: Number(accessoriesCost) || 0,
+    laborHours: Math.max(0, Number(laborHours) || 0),
     variableCostPercent: isCustomVariableCost ? (Number(customVariableCostPercent) || 0) : null,
     notes,
-    createdAt: product?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
+    createdAt,
+    updatedAt: createdAt
+  }), [
+    productId, name, category, quantityInBatch, isMultiPart, parts, isLinkedPackaging, selectedPkg, customAddons,
+    packagingCost, packagingMode, accessoriesCost, laborHours, isCustomVariableCost, customVariableCostPercent, notes, createdAt
+  ]);
+
+  // Alterações não salvas: compara com o estado inicial do formulário
+  const formSnapshot = useMemo(() => JSON.stringify({ ...currentProduct, createdAt: null, updatedAt: null }), [currentProduct]);
+  const initialSnapshotRef = useRef(formSnapshot);
+  const isDirty = formSnapshot !== initialSnapshotRef.current;
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   // Cálculo ao vivo
-  const pricing = calculatePricing(currentProduct, settings, filaments, printers);
-  const shopeeConfig = settings.marketplaces.find(m => m.id === "shopee");
-  const selectedPkg = packagings.find(p => p.id === selectedPackagingId) || packagings[0];
+  const pricing = useMemo(
+    () => calculatePricing(currentProduct, settings, filaments, printers, packagings, customAddons),
+    [currentProduct, settings, filaments, printers, packagings, customAddons]
+  );
+  const marketplaceConfig = getPrimaryMarketplace(settings);
+  const marketplaceFees = marketplaceConfig ? describeMarketplaceFees(marketplaceConfig) : "";
+  const isBatch = currentProduct.quantityInBatch > 1;
+  const showUnit = viewUnitPrices && isBatch;
+  const activeChannel = simChannel === "shopee" && marketplaceConfig ? "shopee" : "direct";
 
-  // Simulação com preço digitado (Venda Direta e Shopee)
+  // Simulação com preço digitado (Venda Direta e marketplace principal)
   const numCustomPrice = parseFloat(customPrice.replace(",", ".")) || 0;
-  const currentSimCost = viewUnitPrices && currentProduct.quantityInBatch > 1 ? pricing.unitCost : pricing.totalCost;
+  const currentSimCost = showUnit ? pricing.unitCost : pricing.totalCost;
   const customDirectSim = simulateCustomSalePrice(numCustomPrice, currentSimCost);
-  const customShopeeSim = simulateCustomSalePrice(numCustomPrice, currentSimCost, shopeeConfig);
-  const activeSim = simChannel === "direct" ? customDirectSim : customShopeeSim;
+  const customShopeeSim = simulateCustomSalePrice(numCustomPrice, currentSimCost, marketplaceConfig);
+  const activeSim = activeChannel === "direct" ? customDirectSim : customShopeeSim;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -381,7 +468,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
       alert("Por favor, preencha o nome do produto.");
       return;
     }
-    onSave(currentProduct);
+    onSave({ ...currentProduct, name: name.trim(), updatedAt: new Date().toISOString() });
   };
 
   return (
@@ -393,18 +480,25 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
           <button
             type="button"
             onClick={onCancel}
+            title="Voltar ao catálogo"
+            aria-label="Voltar ao catálogo"
             className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
                 {product ? ("Editar: " + product.name) : "Cadastrar & Precificar Produto"}
               </h2>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                <PrinterIcon className="w-3 h-3" /> {mainPrinterName}
+                <PrinterIcon className="w-3 h-3" aria-hidden="true" /> {mainPrinterName}
               </span>
+              {isDirty && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                  Não salvo
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
               Preencha os dados ou importe do seu fatiador / MakerWorld para calcular o custo e preços automaticamente.
@@ -430,8 +524,15 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
         </div>
       </div>
 
-      {/* Slicer Automation Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-2xl p-5 shadow-md space-y-4">
+      {/* Slicer Automation Banner (aceita arrastar e soltar o arquivo) */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-2xl p-5 shadow-md space-y-4 transition-shadow ${
+          isDragOver ? "ring-4 ring-amber-300/80 ring-offset-2 ring-offset-slate-50" : ""
+        }`}
+      >
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -441,7 +542,9 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
               <h3 className="font-bold text-base text-white">Importador Automático de Fatiador & MakerWorld</h3>
             </div>
             <p className="text-xs text-indigo-200/80 max-w-xl">
-              Arraste seu arquivo <b>.3mf</b> ou <b>.gcode</b> (Bambu Studio, MakerWorld, Orca, Cura, Prusa). O 3DPrice detecta o <b>nome real</b>, <b>peso em gramas</b> e o <b>tempo de impressão</b>!
+              {isDragOver
+                ? <b className="text-amber-200">Solte o arquivo aqui para importar.</b>
+                : <>Arraste seu arquivo <b>.3mf</b> ou <b>.gcode</b> para esta área (Bambu Studio, MakerWorld, Orca, Cura, Prusa). O sistema detecta o <b>nome real</b>, <b>peso em gramas</b> e o <b>tempo de impressão</b>!</>}
             </p>
           </div>
 
@@ -449,21 +552,30 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
             <input
               type="file"
               ref={fileInputRef}
-              accept=".gcode,.3mf,.txt"
+              accept=".gcode,.3mf,.txt,.log"
               onChange={handleFileUpload}
               className="hidden"
+              tabIndex={-1}
+              aria-hidden="true"
             />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
+              disabled={isImporting}
+              aria-busy={isImporting}
               className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-950 hover:bg-indigo-50 font-bold text-xs rounded-xl shadow transition-colors"
             >
-              <Upload className="w-4 h-4 text-indigo-600" />
-              Enviar .3mf ou .gcode
+              {isImporting ? (
+                <span className="w-4 h-4 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" aria-hidden="true" />
+              ) : (
+                <Upload className="w-4 h-4 text-indigo-600" aria-hidden="true" />
+              )}
+              {isImporting ? "Processando arquivo..." : "Enviar .3mf ou .gcode"}
             </button>
 
             <button
               type="button"
+              aria-expanded={pasteSlicerOpen}
               onClick={() => setPasteSlicerOpen(!pasteSlicerOpen)}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-700/60 hover:bg-indigo-700 text-white font-semibold text-xs border border-indigo-500/40 rounded-xl transition-colors"
             >
@@ -543,7 +655,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
 
         {/* Feedback do fatiador */}
         {slicerFeedback.status !== "idle" && (
-          <div className={"p-3 rounded-lg text-xs flex items-center gap-2 " + (
+          <div role={slicerFeedback.status === "error" ? "alert" : "status"} className={"p-3 rounded-lg text-xs flex items-center gap-2 " + (
             slicerFeedback.status === "success"
               ? "bg-emerald-500/20 text-emerald-200 border border-emerald-500/40"
               : slicerFeedback.status === "warning"
@@ -666,7 +778,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                 {isMultiPart ? "Partes / Cores de Filamento" : "Impressão 3D & Filamento"}
               </h3>
               <span className="text-xs text-slate-500 font-medium">
-                Total: <b>{pricing.totalGrams} g</b> • <b>{pricing.totalTimeString}</b>
+                Total: <b>{formatNumber(pricing.totalGrams)} g</b> • <b>{pricing.totalTimeString}</b>
               </span>
             </div>
 
@@ -680,6 +792,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                     {isMultiPart ? (
                       <input
                         type="text"
+                        aria-label="Nome da parte / cor"
                         value={part.name}
                         onChange={(e) => updatePart(index, "name", e.target.value)}
                         placeholder="Nome da parte / cor (ex: PLA Azul, Olhos)"
@@ -693,6 +806,8 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                       <button
                         type="button"
                         onClick={() => removePart(index)}
+                        title="Remover parte"
+                        aria-label={`Remover ${part.name || "parte"}`}
                         className="text-slate-400 hover:text-rose-600 p-1"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -714,6 +829,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                         <NumberInput
                           step="0.1"
                           min={0}
+                          aria-label={`Peso do filamento em gramas${isMultiPart ? ` - ${part.name}` : ""}`}
                           value={part.filamentGrams}
                           onChange={(val) => updatePart(index, "filamentGrams", val)}
                           className="w-full pl-3 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
@@ -729,19 +845,40 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                           Tempo de Impressão
                         </label>
                         <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap">
-                          {part.printTimeHours.toFixed(2)}h
+                          {formatNumber(Number(part.printTimeHours) || 0, 2, 2)}h
                         </span>
                       </div>
-                      <div className="relative">
-                        <Clock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={part.printTimeString}
-                          onChange={(e) => updatePart(index, "printTimeString", e.target.value)}
-                          placeholder="Ex: 3h30min, 1.5h, 45min"
-                          className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
-                        />
-                      </div>
+                      {(() => {
+                        const timeCheck = parseTimeToHours(part.printTimeString || "");
+                        const invalid = Boolean(part.printTimeString?.trim()) && !timeCheck.valid;
+                        const hintId = `part-time-hint-${index}`;
+                        return (
+                          <>
+                            <div className="relative">
+                              <Clock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                              <input
+                                type="text"
+                                aria-label={`Tempo de impressão${isMultiPart ? ` - ${part.name}` : ""}`}
+                                aria-invalid={invalid}
+                                aria-describedby={invalid || timeCheck.warning ? hintId : undefined}
+                                value={part.printTimeString}
+                                onChange={(e) => updatePart(index, "printTimeString", e.target.value)}
+                                placeholder="Ex: 3h30min, 1.5h, 45min"
+                                className={`w-full pl-8 pr-3 py-2 text-xs bg-white border rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs ${
+                                  invalid ? "border-rose-300 bg-rose-50/40" : "border-slate-200"
+                                }`}
+                              />
+                            </div>
+                            {invalid ? (
+                              <p id={hintId} className="mt-1 text-[10px] font-medium text-rose-600">
+                                Formato não reconhecido. Use, por exemplo: 3h30min, 1.5h, 45min ou 02:30.
+                              </p>
+                            ) : timeCheck.warning ? (
+                              <p id={hintId} className="mt-1 text-[10px] font-medium text-amber-700">{timeCheck.warning}</p>
+                            ) : null}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {/* Seletor de Filamento */}
@@ -753,14 +890,15 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                         <span className="text-[11px] text-slate-400 font-medium">custo/kg</span>
                       </div>
                       <select
+                        aria-label={`Filamento utilizado${isMultiPart ? ` - ${part.name}` : ""}`}
                         value={part.filamentId || ""}
                         onChange={(e) => updatePart(index, "filamentId", e.target.value || undefined)}
                         className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
                       >
-                        <option value="">Padrão (R$ {settings.defaultFilamentPricePerKg.toFixed(2)}/kg)</option>
+                        <option value="">Padrão ({formatBRL(settings.defaultFilamentPricePerKg)}/kg)</option>
                         {filaments.map(f => (
                           <option key={f.id} value={f.id}>
-                            {f.name} ({f.material}) - R$ {f.pricePerKg.toFixed(2)}/kg
+                            {f.name} ({f.material}) - {formatBRL(f.pricePerKg)}/kg
                           </option>
                         ))}
                       </select>
@@ -775,6 +913,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                         <span className="text-[11px] text-slate-400 font-medium">potência</span>
                       </div>
                       <select
+                        aria-label={`Impressora utilizada${isMultiPart ? ` - ${part.name}` : ""}`}
                         value={part.printerId || ""}
                         onChange={(e) => updatePart(index, "printerId", e.target.value || undefined)}
                         className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
@@ -862,7 +1001,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                           const total = calculatePackagingTotal(pkg, customAddons);
                           return (
                             <option key={pkg.id} value={pkg.id}>
-                              {pkg.name} ({pkg.width} × {pkg.height} × {pkg.length} cm) — Custo Total: R$ {total.toFixed(2)}
+                              {pkg.name} ({pkg.width} × {pkg.height} × {pkg.length} cm) — Custo Total: {formatBRL(total)}
                             </option>
                           );
                         })}
@@ -898,7 +1037,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                               Custo Total da Embalagem
                             </span>
                             <span className="text-base font-extrabold text-emerald-700 font-mono">
-                              R$ {calculatePackagingTotal(selectedPkg, customAddons).toFixed(2)}
+                              {formatBRL(calculatePackagingTotal(selectedPkg, customAddons))}
                             </span>
                           </div>
                         </div>
@@ -911,23 +1050,23 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs">
                             <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
                               <span className="text-[10px] text-slate-500 block font-medium">📦 Caixa / Sacola</span>
-                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.boxPrice.toFixed(2)}</span>
+                              <span className="font-bold text-slate-800 text-xs">{formatBRL(selectedPkg.boxPrice)}</span>
                             </div>
                             <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
                               <span className="text-[10px] text-slate-500 block font-medium">🫧 Plástico Bolha</span>
-                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.bubbleWrapPrice.toFixed(2)}</span>
+                              <span className="font-bold text-slate-800 text-xs">{formatBRL(selectedPkg.bubbleWrapPrice)}</span>
                             </div>
                             <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
                               <span className="text-[10px] text-slate-500 block font-medium">🏷️ Adesivo</span>
-                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.stickerPrice.toFixed(2)}</span>
+                              <span className="font-bold text-slate-800 text-xs">{formatBRL(selectedPkg.stickerPrice)}</span>
                             </div>
                             <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
                               <span className="text-[10px] text-slate-500 block font-medium">📜 Papel Seda</span>
-                              <span className="font-bold text-slate-800 text-xs">R$ {selectedPkg.tissuePaperPrice.toFixed(2)}</span>
+                              <span className="font-bold text-slate-800 text-xs">{formatBRL(selectedPkg.tissuePaperPrice)}</span>
                             </div>
                             <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200/70 space-y-0.5">
                               <span className="text-[10px] text-amber-900 block font-bold">💌 Cartão Agradecimento</span>
-                              <span className="font-bold text-amber-950 text-xs">R$ {(selectedPkg.thankYouCardPrice ?? 0.50).toFixed(2)}</span>
+                              <span className="font-bold text-amber-950 text-xs">{formatBRL(selectedPkg.thankYouCardPrice ?? 0.50)}</span>
                             </div>
                           </div>
 
@@ -938,7 +1077,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                               {selectedPkg.otherPrice > 0 && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium text-[11px]">
                                   <span>✨ {selectedPkg.otherDescription || "Personalizado"}:</span>
-                                  <b className="text-slate-900">R$ {selectedPkg.otherPrice.toFixed(2)}</b>
+                                  <b className="text-slate-900">{formatBRL(selectedPkg.otherPrice)}</b>
                                 </span>
                               )}
                               {Array.isArray(selectedPkg.customAddonIds) && selectedPkg.customAddonIds.map(addonId => {
@@ -947,7 +1086,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                                 return (
                                   <span key={addon.id} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-medium text-[11px] border border-indigo-100">
                                     <span>✨ {addon.name}:</span>
-                                    <b className="text-indigo-900">R$ {addon.price.toFixed(2)}</b>
+                                    <b className="text-indigo-900">{formatBRL(addon.price)}</b>
                                   </span>
                                 );
                               })}
@@ -986,12 +1125,43 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                         value={packagingCost}
                         onChange={(val) => setPackagingCost(val)}
                         className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-amber-300 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        placeholder="0.00"
+                        placeholder="0,00"
                       />
                     </div>
                     <p className="text-[10px] text-slate-400">
                       Este valor personalizado será considerado diretamente no custo da peça.
                     </p>
+                  </div>
+                )}
+
+                {/* Lote com várias unidades: uma embalagem para o lote ou uma por unidade */}
+                {isBatch && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 border-t border-slate-200/80">
+                    <span className="text-[11px] font-semibold text-slate-700">
+                      Quantas embalagens este lote usa?
+                    </span>
+                    <div className="inline-flex p-0.5 bg-slate-200/80 rounded-lg text-xs font-semibold self-start sm:self-auto" role="group" aria-label="Modo de embalagem do lote">
+                      <button
+                        type="button"
+                        aria-pressed={packagingMode === "perBatch"}
+                        onClick={() => setPackagingMode("perBatch")}
+                        className={`px-3 py-1 rounded-md transition-all ${
+                          packagingMode === "perBatch" ? "bg-white text-indigo-700 shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        1 para o lote
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={packagingMode === "perUnit"}
+                        onClick={() => setPackagingMode("perUnit")}
+                        className={`px-3 py-1 rounded-md transition-all ${
+                          packagingMode === "perUnit" ? "bg-white text-indigo-700 shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        1 por unidade (×{currentProduct.quantityInBatch})
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1015,9 +1185,39 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                       min={0}
                       value={accessoriesCost}
                       onChange={(val) => setAccessoriesCost(val)}
+                      aria-label="Custo de acessórios adicionais em reais"
                       className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-2xs"
-                      placeholder="0.00"
+                      placeholder="0,00"
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* LINHA 3: MÃO DE OBRA / PÓS-PROCESSAMENTO */}
+              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/90 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <label htmlFor="labor-hours" className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-indigo-600" aria-hidden="true" />
+                      <span>Mão de Obra / Pós-processamento</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      {(settings.laborCostPerHour || 0) > 0
+                        ? <>Horas de acabamento, pintura e montagem do lote, a {formatBRL(settings.laborCostPerHour || 0)}/h.</>
+                        : <>Defina o valor da hora em <b>Insumos &amp; Taxas</b> para incluir no custo.</>}
+                    </p>
+                  </div>
+                  <div className="relative w-full sm:w-48">
+                    <NumberInput
+                      id="labor-hours"
+                      step="0.25"
+                      min={0}
+                      value={laborHours}
+                      onChange={(val) => setLaborHours(val)}
+                      className="w-full pl-3 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-2xs"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">h</span>
                   </div>
                 </div>
               </div>
@@ -1114,11 +1314,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                   <p className="text-[11px] text-slate-500 leading-tight">
                     {customVariableCostPercent > settings.defaultVariableCostPercent ? (
                       <span className="text-amber-700 font-medium">
-                        ⚠️ Margem maior que o padrão (+{(customVariableCostPercent - settings.defaultVariableCostPercent).toFixed(1)}%). Recomendado para peças complexas, com muitos suportes ou risco de empenamento/warping.
+                        ⚠️ Margem maior que o padrão (+{formatPercent(customVariableCostPercent - settings.defaultVariableCostPercent)}). Recomendado para peças complexas, com muitos suportes ou risco de empenamento/warping.
                       </span>
                     ) : customVariableCostPercent < settings.defaultVariableCostPercent ? (
                       <span className="text-emerald-700 font-medium">
-                        💡 Margem menor que o padrão (-{(settings.defaultVariableCostPercent - customVariableCostPercent).toFixed(1)}%). Indicado para geometrias simples e impressões já testadas sem falhas.
+                        💡 Margem menor que o padrão (-{formatPercent(settings.defaultVariableCostPercent - customVariableCostPercent)}). Indicado para geometrias simples e impressões já testadas sem falhas.
                       </span>
                     ) : (
                       <span>Margem personalizada com o mesmo valor do padrão atual ({settings.defaultVariableCostPercent}%).</span>
@@ -1181,28 +1381,42 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
             {/* Linhas de Custo */}
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between text-slate-600">
-                <span>Custo de Filamento ({pricing.totalGrams} g):</span>
-                <span className="font-semibold text-slate-800">R$ {pricing.filamentCost.toFixed(2)}</span>
+                <span>Custo de Filamento ({formatNumber(pricing.totalGrams)} g):</span>
+                <span className="font-semibold text-slate-800">{formatBRL(pricing.filamentCost)}</span>
               </div>
 
               <div className="flex items-center justify-between text-slate-600">
                 <span>Custo de Energia ({pricing.totalTimeString}):</span>
-                <span className="font-semibold text-slate-800">R$ {pricing.energyCost.toFixed(2)}</span>
+                <span className="font-semibold text-slate-800">{formatBRL(pricing.energyCost)}</span>
               </div>
 
+              {pricing.machineCost > 0 && (
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Máquina (depreciação):</span>
+                  <span className="font-semibold text-slate-800">{formatBRL(pricing.machineCost)}</span>
+                </div>
+              )}
+
+              {pricing.laborCost > 0 && (
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Mão de obra ({formatNumber(currentProduct.laborHours || 0)} h):</span>
+                  <span className="font-semibold text-slate-800">{formatBRL(pricing.laborCost)}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-slate-600">
-                <span>Embalagem:</span>
-                <span className="font-semibold text-slate-800">R$ {pricing.packagingCost.toFixed(2)}</span>
+                <span>Embalagem{isBatch && packagingMode === "perUnit" ? ` (×${currentProduct.quantityInBatch})` : ""}:</span>
+                <span className="font-semibold text-slate-800">{formatBRL(pricing.packagingCost)}</span>
               </div>
 
               <div className="flex items-center justify-between text-slate-600">
                 <span>Acessórios:</span>
-                <span className="font-semibold text-slate-800">R$ {pricing.accessoriesCost.toFixed(2)}</span>
+                <span className="font-semibold text-slate-800">{formatBRL(pricing.accessoriesCost)}</span>
               </div>
 
               <div className="flex items-center justify-between text-slate-500 pt-1 border-t border-dashed border-slate-200">
                 <span>Subtotal:</span>
-                <span className="font-medium text-slate-700">R$ {pricing.subtotal.toFixed(2)}</span>
+                <span className="font-medium text-slate-700">{formatBRL(pricing.subtotal)}</span>
               </div>
 
               <div className="flex items-center justify-between text-slate-500">
@@ -1214,7 +1428,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                     <span className="text-[10px] text-slate-400 font-normal">(Padrão)</span>
                   )}
                 </span>
-                <span className="font-medium text-slate-700">R$ {pricing.variableCost.toFixed(2)}</span>
+                <span className="font-medium text-slate-700">{formatBRL(pricing.variableCost)}</span>
               </div>
 
               {/* Total Destacado */}
@@ -1231,11 +1445,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                 </div>
                 <div className="text-right">
                   <span className="text-xl font-black text-indigo-700">
-                    R$ {(viewUnitPrices && currentProduct.quantityInBatch > 1 ? pricing.unitCost : pricing.totalCost).toFixed(2)}
+                    {formatBRL(showUnit ? pricing.unitCost : pricing.totalCost)}
                   </span>
-                  {currentProduct.quantityInBatch > 1 && !viewUnitPrices && (
+                  {isBatch && !viewUnitPrices && (
                     <p className="text-[11px] text-slate-500 font-medium">
-                      (R$ {pricing.unitCost.toFixed(2)} / un)
+                      ({formatBRL(pricing.unitCost)} / un)
                     </p>
                   )}
                 </div>
@@ -1248,7 +1462,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-800">Tabela de Preços Sugeridos</h4>
                 <span className="text-[10px] text-slate-400 font-medium">
-                  {viewUnitPrices && currentProduct.quantityInBatch > 1 ? "Valores Unitários" : "Valores do Lote"}
+                  {showUnit ? "Valores Unitários" : "Valores do Lote"}
                 </span>
               </div>
 
@@ -1258,16 +1472,20 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                     <tr>
                       <th className="py-2 px-2.5">Margem</th>
                       <th className="py-2 px-2.5 text-emerald-700 bg-emerald-50/50">Venda Direta</th>
-                      <th className="py-2 px-2.5 text-orange-700 bg-orange-50/50">Shopee (20%+4)</th>
+                      {marketplaceConfig && (
+                        <th className="py-2 px-2.5 text-orange-700 bg-orange-50/50" title={`${marketplaceConfig.name}: ${marketplaceFees}`}>
+                          {marketplaceConfig.name} ({marketplaceFees})
+                        </th>
+                      )}
                       <th className="py-2 px-2.5 text-right">Lucro Líq.</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {pricing.margins.map((m) => {
-                      const shopee = m.marketplacePrices["shopee"];
-                      const directVal = viewUnitPrices && currentProduct.quantityInBatch > 1 ? m.directUnitSalePrice : m.directSalePrice;
-                      const shopeeVal = viewUnitPrices && currentProduct.quantityInBatch > 1 ? shopee?.unitSalePrice : shopee?.salePrice;
-                      const profitVal = viewUnitPrices && currentProduct.quantityInBatch > 1 ? m.directUnitProfit : m.directProfit;
+                      const shopee = marketplaceConfig ? m.marketplacePrices[marketplaceConfig.id] : undefined;
+                      const directVal = showUnit ? m.directUnitSalePrice : m.directSalePrice;
+                      const shopeeVal = showUnit ? shopee?.unitSalePrice : shopee?.salePrice;
+                      const profitVal = showUnit ? m.directUnitProfit : m.directProfit;
 
                       return (
                         <tr key={m.marginLabel} className="hover:bg-slate-50 transition-colors">
@@ -1275,13 +1493,15 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                             {m.marginLabel}
                           </td>
                           <td className="py-1.5 px-2.5 font-bold text-emerald-700 bg-emerald-50/30">
-                            R$ {directVal.toFixed(2)}
+                            {formatBRL(directVal)}
                           </td>
-                          <td className="py-1.5 px-2.5 font-bold text-orange-700 bg-orange-50/30">
-                            R$ {(shopeeVal || 0).toFixed(2)}
-                          </td>
+                          {marketplaceConfig && (
+                            <td className="py-1.5 px-2.5 font-bold text-orange-700 bg-orange-50/30">
+                              {formatBRL(shopeeVal || 0)}
+                            </td>
+                          )}
                           <td className="py-1.5 px-2.5 text-right font-semibold text-slate-600">
-                            +R$ {profitVal.toFixed(2)}
+                            +{formatBRL(profitVal)}
                           </td>
                         </tr>
                       );
@@ -1291,17 +1511,17 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
               </div>
             </div>
 
-            {/* Simulador Rápido de Preço Livre (Venda Direta ou Shopee) */}
+            {/* Simulador Rápido de Preço Livre (Venda Direta ou marketplace principal) */}
             <div className={`rounded-xl p-3.5 space-y-2.5 border transition-colors ${
-              simChannel === "direct"
+              activeChannel === "direct"
                 ? "bg-emerald-50/70 border-emerald-200"
                 : "bg-orange-50/70 border-orange-200"
             }`}>
               <div className="flex items-center justify-between gap-2">
                 <span className={`text-xs font-bold flex items-center gap-1.5 ${
-                  simChannel === "direct" ? "text-emerald-950" : "text-orange-950"
+                  activeChannel === "direct" ? "text-emerald-950" : "text-orange-950"
                 }`}>
-                  {simChannel === "direct" ? (
+                  {activeChannel === "direct" ? (
                     <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
                   ) : (
                     <ShoppingBag className="w-3.5 h-3.5 text-orange-600" />
@@ -1309,40 +1529,44 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                   Simulador de Preço Livre
                 </span>
 
-                {/* Seletor de Canal: Venda Direta vs Shopee */}
+                {/* Seletor de Canal: Venda Direta vs marketplace principal */}
                 <div className="flex bg-white/90 p-0.5 rounded-lg border border-slate-200 text-[10px] font-bold shadow-2xs">
                   <button
                     type="button"
+                    aria-pressed={activeChannel === "direct"}
                     onClick={() => setSimChannel("direct")}
                     className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
-                      simChannel === "direct"
+                      activeChannel === "direct"
                         ? "bg-emerald-600 text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     <span>Venda Direta</span>
                   </button>
+                  {marketplaceConfig && (
                   <button
                     type="button"
+                    aria-pressed={activeChannel === "shopee"}
                     onClick={() => setSimChannel("shopee")}
                     className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
-                      simChannel === "shopee"
+                      activeChannel === "shopee"
                         ? "bg-orange-600 text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    <span>Shopee</span>
+                    <span>{marketplaceConfig.name}</span>
                   </button>
+                  )}
                 </div>
               </div>
 
               {/* Informação sobre canal selecionado e base de custo */}
               <div className="flex items-center justify-between text-[10px]">
-                <span className={simChannel === "direct" ? "text-emerald-700 font-medium" : "text-orange-700 font-medium"}>
-                  {simChannel === "direct" ? "Venda Balcão / Pix (Sem taxas de comissão)" : "Shopee (20% comissão + R$ 4,00 taxa fixa)"}
+                <span className={activeChannel === "direct" ? "text-emerald-700 font-medium" : "text-orange-700 font-medium"}>
+                  {activeChannel === "direct" ? "Venda Balcão / Pix (Sem taxas de comissão)" : `${marketplaceConfig?.name} (${marketplaceFees})`}
                 </span>
                 <span className="text-[10px] text-slate-500 font-medium">
-                  {viewUnitPrices && currentProduct.quantityInBatch > 1 ? "Preço Unitário" : "Preço do Lote"}
+                  {showUnit ? "Preço Unitário" : "Preço do Lote"}
                 </span>
               </div>
 
@@ -1352,11 +1576,13 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">R$</span>
                   <input
                     type="text"
+                    inputMode="decimal"
+                    aria-label="Preço de venda para simular"
                     placeholder="Ex: 35,00"
                     value={customPrice}
                     onChange={(e) => setCustomPrice(e.target.value)}
                     className={`w-full pl-8 pr-2 py-1.5 text-xs bg-white rounded-lg font-bold text-slate-800 focus:outline-none focus:ring-1 border ${
-                      simChannel === "direct"
+                      activeChannel === "direct"
                         ? "border-emerald-200 focus:ring-emerald-500"
                         : "border-orange-200 focus:ring-orange-500"
                     }`}
@@ -1367,17 +1593,17 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
               {/* Resultados da Simulação */}
               {numCustomPrice > 0 && (
                 <div className={`p-2.5 rounded-lg border text-[11px] space-y-1.5 bg-white ${
-                  simChannel === "direct" ? "border-emerald-100 text-slate-600" : "border-orange-100 text-slate-600"
+                  activeChannel === "direct" ? "border-emerald-100 text-slate-600" : "border-orange-100 text-slate-600"
                 }`}>
-                  {simChannel === "shopee" ? (
+                  {activeChannel === "shopee" ? (
                     <>
                       <div className="flex justify-between">
-                        <span>Taxa Shopee (20% + R$ 4,00):</span>
-                        <span className="font-semibold text-rose-600">-R$ {customShopeeSim.fee.toFixed(2)}</span>
+                        <span>Taxa {marketplaceConfig?.name} ({marketplaceFees}):</span>
+                        <span className="font-semibold text-rose-600">-{formatBRL(customShopeeSim.fee)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Você recebe na conta:</span>
-                        <span className="font-semibold text-slate-800">R$ {customShopeeSim.netReceived.toFixed(2)}</span>
+                        <span className="font-semibold text-slate-800">{formatBRL(customShopeeSim.netReceived)}</span>
                       </div>
                     </>
                   ) : (
@@ -1388,7 +1614,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                       </div>
                       <div className="flex justify-between">
                         <span>Você recebe na conta:</span>
-                        <span className="font-semibold text-slate-800">R$ {customDirectSim.netReceived.toFixed(2)}</span>
+                        <span className="font-semibold text-slate-800">{formatBRL(customDirectSim.netReceived)}</span>
                       </div>
                     </>
                   )}
@@ -1396,20 +1622,20 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                   <div className="flex justify-between pt-1 border-t border-slate-100">
                     <span className="font-bold text-slate-800">Seu Lucro Líquido:</span>
                     <span className={"font-black " + (activeSim.netProfit >= 0 ? "text-emerald-600" : "text-rose-600")}>
-                      R$ {activeSim.netProfit.toFixed(2)} ({activeSim.markupPercent.toFixed(1)}% sobre custo • {activeSim.marginPercent.toFixed(1)}% margem)
+                      {formatBRL(activeSim.netProfit)} ({formatPercent(activeSim.markupPercent)} sobre custo • {formatPercent(activeSim.marginPercent)} margem)
                     </span>
                   </div>
 
-                  {/* Comparativo Inteligente entre Venda Direta e Shopee */}
+                  {/* Comparativo Inteligente entre Venda Direta e marketplace */}
                   <div className="pt-1.5 border-t border-dashed border-slate-200 text-[10px] flex items-center justify-between">
                     <span className="text-slate-400 font-medium">Comparativo pelo mesmo preço:</span>
-                    {simChannel === "direct" ? (
+                    {activeChannel === "direct" ? (
                       <span className="text-orange-700 font-semibold">
-                        Na Shopee: R$ {customShopeeSim.netProfit.toFixed(2)} ({customShopeeSim.markupPercent.toFixed(1)}% markup)
+                        {marketplaceConfig ? <>No canal {marketplaceConfig.name}: {formatBRL(customShopeeSim.netProfit)}</> : null} ({formatPercent(customShopeeSim.markupPercent)} markup)
                       </span>
                     ) : (
                       <span className="text-emerald-700 font-semibold">
-                        Na Venda Direta: R$ {customDirectSim.netProfit.toFixed(2)} ({customDirectSim.markupPercent.toFixed(1)}% markup)
+                        Na Venda Direta: {formatBRL(customDirectSim.netProfit)} ({formatPercent(customDirectSim.markupPercent)} markup)
                       </span>
                     )}
                   </div>

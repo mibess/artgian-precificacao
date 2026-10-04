@@ -8,7 +8,15 @@ import {
   CustomPackagingAddon,
   PricingBreakdown
 } from "../types/pricing";
-import { calculatePricing, AVAILABLE_MARGIN_OPTIONS } from "../utils/calculator";
+import {
+  calculatePricing,
+  AVAILABLE_MARGIN_OPTIONS,
+  formatBRL,
+  formatNumber,
+  describeMarketplaceFees,
+  getPrimaryMarketplace,
+  pickMarginRow
+} from "../utils/calculator";
 import { 
   Search, 
   Plus, 
@@ -23,11 +31,14 @@ import {
   ShoppingBag, 
   Share2, 
   Sparkles,
-  ArrowUpDown,
-  FileSpreadsheet,
   X,
   RotateCcw
 } from "lucide-react";
+
+/** Minúsculas e sem acentos, para busca tolerante ("dragao" encontra "Dragão"). */
+function normalizeText(value: string): string {
+  return (value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
 
 interface ProductListProps {
   products: ProductItem[];
@@ -59,31 +70,31 @@ export const ProductList: React.FC<ProductListProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedMargin, setSelectedMargin] = useState<number>(1.0); // 100% padrão
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
-  // Categorias únicas
-  const categories = ["all", ...Array.from(new Set(products.map(p => p.category || "Geral")))];
+  // Categorias únicas (ordenadas alfabeticamente para facilitar a leitura)
+  const categories = useMemo(() => {
+    const unique = Array.from(new Set(products.map(p => p.category || "Geral")));
+    unique.sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return ["all", ...unique];
+  }, [products]);
 
-  // Filtro e Busca com suporte a acentuação e categoria
-  const normalizedSearch = searchTerm
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
+  // Se a categoria selecionada deixar de existir (produto excluído/renomeado), volta para "Todas"
+  const activeCategory = categories.includes(selectedCategory) ? selectedCategory : "all";
 
-  const filteredProducts = products.filter(p => {
-    const normName = (p.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const normNotes = (p.notes || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const normCategory = (p.category || "Geral").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  // Texto pesquisável normalizado uma única vez por produto (sem acentos e minúsculo)
+  const searchIndex = useMemo(() => {
+    return new Map(products.map(p => [p.id, normalizeText([p.name, p.notes, p.category || "Geral"].join("\n"))]));
+  }, [products]);
 
-    const matchesSearch = !normalizedSearch ||
-      normName.includes(normalizedSearch) ||
-      normNotes.includes(normalizedSearch) ||
-      normCategory.includes(normalizedSearch);
+  const normalizedSearch = normalizeText(searchTerm).trim();
 
-    const matchesCategory = selectedCategory === "all" || (p.category || "Geral") === selectedCategory;
+  const filteredProducts = useMemo(() => products.filter(p => {
+    const matchesSearch = !normalizedSearch || (searchIndex.get(p.id) || "").includes(normalizedSearch);
+    const matchesCategory = activeCategory === "all" || (p.category || "Geral") === activeCategory;
     return matchesSearch && matchesCategory;
-  });
+  }), [products, searchIndex, normalizedSearch, activeCategory]);
+
+  const primaryMarketplace = getPrimaryMarketplace(settings);
 
   // Mapa de precificação memoizado para evitar recalcular a cada render
   const pricingMap = useMemo(() => {
@@ -125,7 +136,7 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
           <div>
             <p className="text-xs text-slate-500 font-medium">Custo Médio de Produção</p>
-            <p className="text-xl font-bold text-slate-800">R$ {avgCost.toFixed(2)}</p>
+            <p className="text-xl font-bold text-slate-800">{formatBRL(avgCost)}</p>
           </div>
         </div>
 
@@ -135,7 +146,7 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
           <div>
             <p className="text-xs text-slate-500 font-medium">Consumo Total de Filamento</p>
-            <p className="text-xl font-bold text-slate-800">{totalWeight.toFixed(0)} g <span className="text-xs font-normal text-slate-400">({(totalWeight/1000).toFixed(2)} kg)</span></p>
+            <p className="text-xl font-bold text-slate-800">{formatNumber(totalWeight, 0)} g <span className="text-xs font-normal text-slate-400">({formatNumber(totalWeight / 1000, 2, 2)} kg)</span></p>
           </div>
         </div>
 
@@ -144,8 +155,12 @@ export const ProductList: React.FC<ProductListProps> = ({
             <ShoppingBag className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 font-medium">Taxa Shopee Atual</p>
-            <p className="text-xl font-bold text-slate-800">{settings.marketplaces.find(m => m.id === "shopee")?.commissionPercent || 20}% + R$ 4</p>
+            <p className="text-xs text-slate-500 font-medium">
+              {primaryMarketplace ? `Taxa ${primaryMarketplace.name}` : "Marketplaces"}
+            </p>
+            <p className="text-xl font-bold text-slate-800">
+              {primaryMarketplace ? describeMarketplaceFees(primaryMarketplace) : "Nenhum ativo"}
+            </p>
           </div>
         </div>
       </div>
@@ -157,9 +172,10 @@ export const ProductList: React.FC<ProductListProps> = ({
           
           {/* Campo de Pesquisa */}
           <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
             <input
               type="text"
+              aria-label="Buscar produtos"
               placeholder="Buscar por nome, notas ou categoria..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -171,6 +187,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 onClick={() => setSearchTerm("")}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
                 title="Limpar pesquisa"
+                aria-label="Limpar pesquisa"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -179,8 +196,9 @@ export const ProductList: React.FC<ProductListProps> = ({
 
           {/* Seletor de Margem Visualizada */}
           <div className="flex items-center gap-2 sm:border-l sm:border-slate-200 sm:pl-3 justify-between sm:justify-end">
-            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Margem Visualizada:</span>
+            <label htmlFor="catalog-margin" className="text-xs text-slate-500 font-medium whitespace-nowrap">Margem Visualizada:</label>
             <select
+              id="catalog-margin"
               value={selectedMargin.toString()}
               onChange={(e) => {
                 const val = Number(e.target.value);
@@ -200,13 +218,15 @@ export const ProductList: React.FC<ProductListProps> = ({
         {/* Linha Secundária: Barra de Categorias e Contador */}
         <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-slate-100">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 flex-1 min-w-0">
-            <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-0.5" />
+            <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-0.5" aria-hidden="true" />
             {categories.map(cat => (
               <button
                 key={cat}
+                type="button"
+                aria-pressed={activeCategory === cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                  selectedCategory === cat
+                  activeCategory === cat
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
@@ -217,7 +237,7 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
 
           {/* Feedback de contagem quando filtrado */}
-          {(searchTerm || selectedCategory !== "all") && (
+          {(searchTerm || activeCategory !== "all") && (
             <div className="hidden sm:flex items-center gap-1.5 shrink-0 text-xs font-medium text-slate-500">
               <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold text-[11px]">
                 {filteredProducts.length} de {products.length}
@@ -237,12 +257,13 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
           <h3 className="text-base font-bold text-slate-800">Nenhum produto encontrado</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
-            {searchTerm || selectedCategory !== "all"
+            {searchTerm || activeCategory !== "all"
               ? `Nenhum produto corresponde aos filtros aplicados${searchTerm ? ` ("${searchTerm}")` : ""}.`
               : "Cadastre seu primeiro produto manualmente ou importe dados do seu fatiador 3D."}
           </p>
-          {(searchTerm || selectedCategory !== "all") ? (
+          {(searchTerm || activeCategory !== "all") ? (
             <button
+              type="button"
               onClick={() => { setSearchTerm(""); setSelectedCategory("all"); }}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shadow-sm"
             >
@@ -251,6 +272,7 @@ export const ProductList: React.FC<ProductListProps> = ({
             </button>
           ) : (
             <button
+              type="button"
               onClick={onNewProduct}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
             >
@@ -263,11 +285,8 @@ export const ProductList: React.FC<ProductListProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredProducts.map(product => {
             const pricing = pricingMap.get(product.id) || calculatePricing(product, settings, filaments, printers, packagings, customAddons);
-            const numMargin = Number(selectedMargin);
-            const marginRow = pricing.margins.find(m => Math.abs(m.marginPercent - numMargin) < 0.005)
-              || pricing.margins.find(m => Math.abs(m.marginPercent - 1.0) < 0.005)
-              || pricing.margins[0];
-            const shopee = marginRow?.marketplacePrices["shopee"];
+            const marginRow = pickMarginRow(pricing, selectedMargin);
+            const marketplacePrice = primaryMarketplace ? marginRow.marketplacePrices[primaryMarketplace.id] : undefined;
 
             return (
               <div
@@ -301,29 +320,37 @@ export const ProductList: React.FC<ProductListProps> = ({
                     {/* Actions Menu */}
                     <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                       <button
+                        type="button"
                         onClick={() => onOpenQuote(product, selectedMargin)}
                         title="Gerar Orçamento / Ficha Técnica"
+                        aria-label={`Gerar orçamento de ${product.name}`}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-md cursor-pointer"
                       >
                         <Share2 className="w-4 h-4" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => onDuplicateProduct(product)}
                         title="Duplicar Produto"
+                        aria-label={`Duplicar ${product.name}`}
                         className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-slate-50 rounded-md"
                       >
                         <Copy className="w-4 h-4" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => onEditProduct(product)}
                         title="Editar / Ver Tabela Completa"
+                        aria-label={`Editar ${product.name}`}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-md"
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => onDeleteProduct(product.id)}
                         title="Excluir"
+                        aria-label={`Excluir ${product.name}`}
                         className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded-md"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -335,7 +362,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                   <div className="flex items-center gap-3 mt-3 text-xs text-slate-500 font-medium">
                     <span className="flex items-center gap-1">
                       <Scale className="w-3.5 h-3.5 text-slate-400" />
-                      <b>{pricing.totalGrams} g</b>
+                      <b>{formatNumber(pricing.totalGrams)} g</b>
                     </span>
                     <span>•</span>
                     <span className="flex items-center gap-1">
@@ -344,7 +371,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     </span>
                     <span>•</span>
                     <span className="text-slate-400">
-                      Filamento: R$ {pricing.filamentCost.toFixed(2)}
+                      Filamento: {formatBRL(pricing.filamentCost)}
                     </span>
                   </div>
                 </div>
@@ -358,20 +385,20 @@ export const ProductList: React.FC<ProductListProps> = ({
                       <span className="text-[11px] text-slate-400 font-semibold block uppercase tracking-wider">Custo de Produção</span>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-base font-extrabold text-slate-800">
-                          R$ {pricing.totalCost.toFixed(2)}
+                          {formatBRL(pricing.totalCost)}
                         </span>
                         {product.quantityInBatch > 1 && (
                           <span className="text-xs font-semibold text-indigo-600">
-                            (R$ {pricing.unitCost.toFixed(2)}/un)
+                            ({formatBRL(pricing.unitCost)}/un)
                           </span>
                         )}
                       </div>
                     </div>
 
                     <div className="text-right text-[11px] text-slate-400">
-                      <span>Energia: R$ {pricing.energyCost.toFixed(2)}</span>
+                      <span>Energia: {formatBRL(pricing.energyCost)}</span>
                       <br />
-                      <span>Embalagem: R$ {(pricing.packagingCost + pricing.accessoriesCost).toFixed(2)}</span>
+                      <span>Emb. + acessórios: {formatBRL(pricing.packagingCost + pricing.accessoriesCost)}</span>
                     </div>
                   </div>
 
@@ -384,38 +411,45 @@ export const ProductList: React.FC<ProductListProps> = ({
                         Venda Direta ({marginRow.marginLabel})
                       </span>
                       <div className="text-base font-black text-emerald-700 mt-0.5">
-                        R$ {marginRow.directSalePrice.toFixed(2)}
+                        {formatBRL(marginRow.directSalePrice)}
                       </div>
                       <div className="text-[11px] text-emerald-600 font-semibold">
-                        Lucro: +R$ {marginRow.directProfit.toFixed(2)}
+                        Lucro: +{formatBRL(marginRow.directProfit)}
                       </div>
                       {product.quantityInBatch > 1 && (
                         <div className="text-[10px] text-emerald-700/80 font-medium">
-                          R$ {marginRow.directUnitSalePrice.toFixed(2)}/un
+                          {formatBRL(marginRow.directUnitSalePrice)}/un
                         </div>
                       )}
                     </div>
 
-                    {/* Shopee Sale */}
-                    <div className="bg-orange-50/60 border border-orange-100 rounded-lg p-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wider">
-                          Shopee ({marginRow.marginLabel})
-                        </span>
-                        <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                      </div>
-                      <div className="text-base font-black text-orange-700 mt-0.5">
-                        R$ {shopee?.salePrice.toFixed(2)}
-                      </div>
-                      <div className="text-[11px] text-orange-600 font-semibold">
-                        Líquido: +R$ {shopee?.netProfit.toFixed(2)}
-                      </div>
-                      {product.quantityInBatch > 1 && (
-                        <div className="text-[10px] text-orange-700/80 font-medium">
-                          R$ {shopee?.unitSalePrice.toFixed(2)}/un
+                    {/* Canal de marketplace principal (Shopee quando ativa) */}
+                    {primaryMarketplace && marketplacePrice ? (
+                      <div className="bg-orange-50/60 border border-orange-100 rounded-lg p-2.5">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wider truncate" title={primaryMarketplace.name}>
+                            {primaryMarketplace.name} ({marginRow.marginLabel})
+                          </span>
+                          <span className="w-2 h-2 shrink-0 rounded-full bg-orange-500" aria-hidden="true"></span>
                         </div>
-                      )}
-                    </div>
+                        <div className="text-base font-black text-orange-700 mt-0.5">
+                          {formatBRL(marketplacePrice.salePrice)}
+                        </div>
+                        <div className="text-[11px] text-orange-600 font-semibold">
+                          Líquido: +{formatBRL(marketplacePrice.netProfit)}
+                        </div>
+                        {product.quantityInBatch > 1 && (
+                          <div className="text-[10px] text-orange-700/80 font-medium">
+                            {formatBRL(marketplacePrice.unitSalePrice)}/un
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg p-2.5 flex flex-col justify-center text-[11px] text-slate-500">
+                        <span className="font-bold text-slate-600">Marketplaces</span>
+                        <span>Nenhum canal ativo em Insumos &amp; Taxas.</span>
+                      </div>
+                    )}
 
                   </div>
 
@@ -436,6 +470,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     )}
                   </div>
                   <button
+                    type="button"
                     onClick={() => onEditProduct(product)}
                     className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 hover:underline"
                   >

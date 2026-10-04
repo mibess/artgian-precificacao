@@ -1,22 +1,21 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from "react";
 import { ProductItem, GlobalSettings, Filament, Printer, PackagingItem, CustomPackagingAddon } from "./types/pricing";
 import { defaultSettings, defaultFilaments, defaultPrinters, defaultPackagings, defaultCustomPackagingAddons } from "./data/defaultData";
 import { APP_ENV } from "./config/env";
 import { FullScreenMessage } from "./components/FullScreenMessage";
 import { Navbar } from "./components/Navbar";
 import { ProductList } from "./components/ProductList";
-import { ProductEditor } from "./components/ProductEditor";
-import { SettingsView } from "./components/SettingsView";
-import { SimulatorView } from "./components/SimulatorView";
-import { QuoteModal } from "./components/QuoteModal";
-import { exportToExcel } from "./utils/excelIO";
 import { LoginScreen } from "./components/LoginScreen";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastContainer, ToastMessage } from "./components/Toast";
+import { createId } from "./utils/ids";
+import { resolveUserCollections, remapProductReferences } from "./utils/userDefaults";
 import {
   isSupabaseConfigured,
   getCurrentUser,
   signOutFromCloud,
   onAuthStateChange,
+  consumeSchemaWarning,
   fetchProductsFromCloud,
   saveProductToCloud,
   deleteProductFromCloud,
@@ -31,27 +30,61 @@ import {
   fetchSettingsFromCloud,
   saveSettingsToCloud
 } from "./services/supabase";
-import { 
-  getTabFromPath, 
-  getPathForTab, 
-  getProductIdFromSearch, 
-  TabType 
+import {
+  getTabFromPath,
+  getPathForTab,
+  getProductIdFromSearch,
+  TabType
 } from "./utils/routes";
+
+// Telas secundárias carregadas sob demanda (reduz o bundle inicial)
+const ProductEditor = lazy(() => import("./components/ProductEditor").then(m => ({ default: m.ProductEditor })));
+const SettingsView = lazy(() => import("./components/SettingsView").then(m => ({ default: m.SettingsView })));
+const SimulatorView = lazy(() => import("./components/SimulatorView").then(m => ({ default: m.SimulatorView })));
+const QuoteModal = lazy(() => import("./components/QuoteModal").then(m => ({ default: m.QuoteModal })));
+
+interface AuthUser {
+  id: string;
+  email: string;
+}
+
+function toAuthUser(user: { id: string; email?: string | null } | null | undefined): AuthUser | null {
+  return user?.id ? { id: user.id, email: user.email || "" } : null;
+}
+
+const ViewFallback = () => (
+  <div className="flex items-center justify-center py-24 text-xs font-medium text-slate-400" role="status">
+    <span className="w-4 h-4 mr-2 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" aria-hidden="true" />
+    Carregando...
+  </div>
+);
 
 export function App() {
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const showToast = useCallback((message: string, type: ToastMessage["type"] = "success", title?: string) => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const showToast = useCallback((
+    message: string,
+    type: ToastMessage["type"] = "success",
+    title?: string,
+    durationMs?: number
+  ) => {
+    const id = createId("toast");
     setToasts(prev => [...prev, { id, type, title, message }]);
+    const duration = durationMs ?? (type === "error" || type === "warning" ? 7000 : 4000);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
+    }, duration);
   }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
+
+  /** Mostra (uma vez) o aviso de migration pendente detectado pelo serviço. */
+  const notifySchemaWarning = useCallback(() => {
+    const warning = consumeSchemaWarning();
+    if (warning) showToast(warning, "warning", "Atualização do banco pendente", 12000);
+  }, [showToast]);
 
   // Estado em memória: espelho dos dados da nuvem (nada é persistido no navegador)
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -74,6 +107,14 @@ export function App() {
   // Contador de sincronizações ativas
   const [syncOps, setSyncOps] = useState<number>(0);
   const isSyncing = syncOps > 0;
+  const isSyncingRef = useRef(false);
+  isSyncingRef.current = isSyncing;
+
+  // Alterações não salvas na tela atual (editor ou insumos)
+  const unsavedChangesRef = useRef(false);
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    unsavedChangesRef.current = dirty;
+  }, []);
   const startSync = () => setSyncOps(n => n + 1);
   const endSync = () => setSyncOps(n => Math.max(0, n - 1));
 
@@ -84,43 +125,83 @@ export function App() {
   const [quoteMargin, setQuoteMargin] = useState<number>(1.0);
 
   // Autenticação: a sessão é gerenciada exclusivamente pelo Supabase Auth
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authChecking, setAuthChecking] = useState<boolean>(() => isSupabaseConfigured());
+  const isAuthenticated = Boolean(authUser);
+  const userId = authUser?.id ?? null;
+
+  /** Limpa tudo que pertence ao usuário da sessão (evita vazar dados para o próximo login). */
+  const resetSessionState = useCallback(() => {
+    setProducts([]);
+    setSettings(defaultSettings);
+    setFilaments(defaultFilaments);
+    setPrinters(defaultPrinters);
+    setPackagings(defaultPackagings);
+    setCustomAddons(defaultCustomPackagingAddons);
+    setEditingProduct(null);
+    setQuoteProduct(null);
+    setLoadError(null);
+    setDataLoaded(false);
+    unsavedChangesRef.current = false;
+  }, []);
+
+  const updateAuthUser = useCallback((next: AuthUser | null) => {
+    setAuthUser(prev => (prev?.id === next?.id && prev?.email === next?.email ? prev : next));
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
     getCurrentUser()
-      .then(user => setIsAuthenticated(Boolean(user)))
+      .then(user => updateAuthUser(toAuthUser(user)))
       .finally(() => setAuthChecking(false));
 
     const { data: authListener } = onAuthStateChange((_event, session) => {
-      setIsAuthenticated(Boolean(session?.user));
+      const next = toAuthUser(session?.user);
+      if (!next) resetSessionState();
+      updateAuthUser(next);
     });
 
     return () => {
       authListener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [resetSessionState, updateAuthUser]);
 
-  const handleLoginSuccess = (userEmail: string) => {
-    setIsAuthenticated(true);
+  const handleLoginSuccess = (userEmail: string, loggedUserId?: string) => {
+    if (loggedUserId) updateAuthUser({ id: loggedUserId, email: userEmail });
     showToast(`Bem-vindo, ${userEmail}!`, "success");
   };
 
   const handleLogout = async () => {
-    if (window.confirm("Deseja realmente sair do sistema?")) {
+    const message = unsavedChangesRef.current
+      ? "Existem alterações não salvas nesta tela. Deseja realmente sair do sistema e descartá-las?"
+      : "Deseja realmente sair do sistema?";
+    if (window.confirm(message)) {
       await signOutFromCloud();
-      setProducts([]);
-      setDataLoaded(false);
-      setIsAuthenticated(false);
+      resetSessionState();
+      updateAuthUser(null);
       showToast("Sessão encerrada com sucesso.", "info");
     }
   };
 
+  // Avisa antes de fechar/recarregar a aba com alterações não salvas ou salvamentos em andamento
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!unsavedChangesRef.current && !isSyncingRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   // Navegação centralizada que atualiza a URL sem recarregar a página
-  const navigateToTab = (tab: TabType, productToEdit?: ProductItem | null, replace = false) => {
+  const navigateToTab = (tab: TabType, productToEdit?: ProductItem | null, replace = false, force = false) => {
+    if (!force && unsavedChangesRef.current &&
+        !window.confirm("Existem alterações não salvas nesta tela. Deseja sair e descartá-las?")) {
+      return;
+    }
+    unsavedChangesRef.current = false;
     setActiveTab(tab);
     if (tab !== "editor") {
       setEditingProduct(null);
@@ -138,6 +219,7 @@ export function App() {
         window.history.pushState({ tab, productId: productToEdit?.id }, "", newPath);
       }
     }
+    window.scrollTo({ top: 0 });
   };
 
   // Suporte a histórico do navegador (Voltar / Avançar)
@@ -169,7 +251,7 @@ export function App() {
 
   // Carregamento da nuvem (única fonte de verdade). Em caso de erro, não usa dados locais.
   useEffect(() => {
-    if (!isSupabaseConfigured() || !isAuthenticated) return;
+    if (!isSupabaseConfigured() || !userId) return;
 
     let isMounted = true;
     async function loadCloudData() {
@@ -188,30 +270,46 @@ export function App() {
 
         if (!isMounted) return;
 
-        // Produtos são essenciais: null significa falha de rede/permissão (vazio é []).
-        if (cloudProds === null) {
-          setLoadError("Falha ao consultar os produtos no banco. Verifique sua conexão e se as tabelas do banco deste ambiente foram criadas.");
+        // null = falha de rede/permissão (vazio é []). Sem a lista real, salvar os insumos
+        // poderia sobrescrever/remover dados da nuvem, então a carga é interrompida.
+        const failed = [
+          cloudProds === null && "produtos",
+          cloudFilaments === null && "filamentos",
+          cloudPrinters === null && "impressoras",
+          cloudPackagings === null && "embalagens",
+          cloudCustomAddons === null && "personalizados"
+        ].filter(Boolean);
+
+        if (failed.length > 0) {
+          setLoadError(`Falha ao consultar ${failed.join(", ")} no banco. Verifique sua conexão e se as tabelas do banco deste ambiente foram criadas.`);
           return;
         }
 
-        setProducts(cloudProds);
+        // Coleções vazias (usuário novo) recebem os padrões com ids próprios do usuário.
+        const { collections, idMap } = resolveUserCollections({
+          filaments: cloudFilaments!,
+          printers: cloudPrinters!,
+          packagings: cloudPackagings!,
+          customAddons: cloudCustomAddons!
+        }, userId);
 
-        // Insumos ausentes (usuário novo): mantém padrões em memória até o primeiro salvamento.
-        if (cloudSettings) setSettings(cloudSettings);
-        if (cloudFilaments && cloudFilaments.length > 0) setFilaments(cloudFilaments);
-        if (cloudPrinters && cloudPrinters.length > 0) setPrinters(cloudPrinters);
-        if (cloudPackagings && cloudPackagings.length > 0) setPackagings(cloudPackagings);
-        if (cloudCustomAddons && cloudCustomAddons.length > 0) setCustomAddons(cloudCustomAddons);
+        const loadedProducts = remapProductReferences(cloudProds!, idMap);
+        setProducts(loadedProducts);
+        setSettings(cloudSettings ?? defaultSettings);
+        setFilaments(collections.filaments);
+        setPrinters(collections.printers);
+        setPackagings(collections.packagings);
+        setCustomAddons(collections.customAddons);
 
         const prodId = getProductIdFromSearch(window.location.search);
         if (prodId) {
-          setEditingProduct(cloudProds.find(p => p.id === prodId) || null);
+          setEditingProduct(loadedProducts.find(p => p.id === prodId) || null);
         }
 
         setDataLoaded(true);
       } catch (err) {
         console.warn("[App] Erro ao carregar dados da nuvem:", err);
-        if (isMounted) setLoadError("Erro inesperado ao carregar os dados da nuvem.");
+        if (isMounted) setLoadError("Erro inesperado ao carregar os dados da nuvem. Verifique sua conexão e tente novamente.");
       } finally {
         if (isMounted) endSync();
       }
@@ -219,7 +317,7 @@ export function App() {
 
     loadCloudData();
     return () => { isMounted = false; };
-  }, [isAuthenticated, reloadKey]);
+  }, [userId, reloadKey]);
 
 
   // Ações de Produtos (a nuvem é a única fonte de verdade; estado em memória é espelho)
@@ -233,27 +331,28 @@ export function App() {
       }
       return [savedProduct, ...prev];
     });
-    navigateToTab("catalog");
+    navigateToTab("catalog", undefined, false, true);
 
     startSync();
     const ok = await saveProductToCloud(savedProduct);
     endSync();
     if (ok) {
       showToast(`Produto "${savedProduct.name}" salvo com sucesso!`, "success");
+      notifySchemaWarning();
     } else {
       showToast(`Falha ao salvar "${savedProduct.name}" na nuvem. Recarregue a página antes de continuar.`, "error");
     }
   };
 
   const handleDuplicateProduct = async (prod: ProductItem) => {
-    const newId = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
     const duplicated: ProductItem = {
       ...prod,
-      id: newId,
+      id: createId("prod"),
       name: `${prod.name} (Cópia)`,
-      parts: prod.parts.map(p => ({ ...p, id: `part-${Date.now()}-${Math.random().toString(36).substring(2, 6)}` })),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      parts: prod.parts.map(p => ({ ...p, id: createId("part") })),
+      createdAt: now,
+      updatedAt: now
     };
     setProducts(prev => [duplicated, ...prev]);
 
@@ -284,48 +383,54 @@ export function App() {
     }
   };
 
-  const handleSaveSettings = async (newSettings: GlobalSettings) => {
+  const handleSaveSettings = async (newSettings: GlobalSettings): Promise<boolean> => {
     setSettings(newSettings);
     startSync();
     const ok = await saveSettingsToCloud(newSettings);
     endSync();
     if (ok) {
       showToast("Configurações salvas na nuvem!", "success");
+      notifySchemaWarning();
     } else {
       showToast("Falha ao salvar as configurações na nuvem.", "error");
     }
+    return ok;
   };
 
-  const handleSaveFilaments = async (newFilaments: Filament[]) => {
+  const handleSaveFilaments = async (newFilaments: Filament[]): Promise<boolean> => {
     setFilaments(newFilaments);
     startSync();
     const ok = await saveAllFilamentsToCloud(newFilaments);
     endSync();
     if (!ok) showToast("Falha ao salvar filamentos na nuvem.", "error");
+    return ok;
   };
 
-  const handleSavePrinters = async (newPrinters: Printer[]) => {
+  const handleSavePrinters = async (newPrinters: Printer[]): Promise<boolean> => {
     setPrinters(newPrinters);
     startSync();
     const ok = await saveAllPrintersToCloud(newPrinters);
     endSync();
     if (!ok) showToast("Falha ao salvar impressoras na nuvem.", "error");
+    return ok;
   };
 
-  const handleSavePackagings = async (newPackagings: PackagingItem[]) => {
+  const handleSavePackagings = async (newPackagings: PackagingItem[]): Promise<boolean> => {
     setPackagings(newPackagings);
     startSync();
     const ok = await saveAllPackagingsToCloud(newPackagings);
     endSync();
     if (!ok) showToast("Falha ao salvar embalagens na nuvem.", "error");
+    return ok;
   };
 
-  const handleSaveCustomAddons = async (newAddons: CustomPackagingAddon[]) => {
+  const handleSaveCustomAddons = async (newAddons: CustomPackagingAddon[]): Promise<boolean> => {
     setCustomAddons(newAddons);
     startSync();
     const ok = await saveAllCustomAddonsToCloud(newAddons);
     endSync();
     if (!ok) showToast("Falha ao salvar personalizados na nuvem.", "error");
+    return ok;
   };
 
 
@@ -337,9 +442,16 @@ export function App() {
     navigateToTab("editor", null);
   };
 
-  const handleExportExcel = () => {
-    exportToExcel(products, settings, filaments, printers, packagings, customAddons);
-    showToast("Catálogo Excel exportado com sucesso!", "success");
+  const handleExportExcel = async () => {
+    try {
+      // A biblioteca de planilhas é pesada: só é baixada quando o usuário exporta.
+      const { exportToExcel } = await import("./utils/excelIO");
+      exportToExcel(products, settings, filaments, printers, packagings, customAddons);
+      showToast("Catálogo Excel exportado com sucesso!", "success");
+    } catch (err) {
+      console.error("[App] Falha ao exportar Excel:", err);
+      showToast("Não foi possível gerar a planilha. Verifique sua conexão e tente novamente.", "error");
+    }
   };
 
   // Sem credenciais do Supabase para o ambiente atual: orienta a configurar
@@ -382,6 +494,8 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+      <a href="#conteudo-principal" className="skip-link">Pular para o conteúdo</a>
+
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
@@ -392,87 +506,98 @@ export function App() {
         productsCount={products.length}
         isSyncing={isSyncing}
         onLogout={handleLogout}
+        userEmail={authUser?.email}
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === "catalog" && (
-          <ProductList
-            products={products}
-            settings={settings}
-            filaments={filaments}
-            printers={printers}
-            packagings={packagings}
-            customAddons={customAddons}
-            onEditProduct={handleEditProduct}
-            onDuplicateProduct={handleDuplicateProduct}
-            onDeleteProduct={handleDeleteProduct}
-            onNewProduct={handleNewProduct}
-            onOpenQuote={(prod, margin) => {
-              setQuoteProduct(prod);
-              if (margin !== undefined) {
-                setQuoteMargin(margin);
-              }
-            }}
-          />
-        )}
+      <main id="conteudo-principal" tabIndex={-1} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 focus:outline-none">
+        <ErrorBoundary key={activeTab}>
+          <Suspense fallback={<ViewFallback />}>
+            {activeTab === "catalog" && (
+              <ProductList
+                products={products}
+                settings={settings}
+                filaments={filaments}
+                printers={printers}
+                packagings={packagings}
+                customAddons={customAddons}
+                onEditProduct={handleEditProduct}
+                onDuplicateProduct={handleDuplicateProduct}
+                onDeleteProduct={handleDeleteProduct}
+                onNewProduct={handleNewProduct}
+                onOpenQuote={(prod, margin) => {
+                  setQuoteProduct(prod);
+                  if (margin !== undefined) {
+                    setQuoteMargin(margin);
+                  }
+                }}
+              />
+            )}
 
-        {activeTab === "editor" && (
-          <ProductEditor
-            key={editingProduct?.id || "new-product"}
-            product={editingProduct}
-            settings={settings}
-            filaments={filaments}
-            printers={printers}
-            packagings={packagings}
-            customAddons={customAddons}
-            onSave={handleSaveProduct}
-            onCancel={() => {
-              navigateToTab("catalog");
-            }}
-          />
-        )}
+            {activeTab === "editor" && (
+              <ProductEditor
+                key={editingProduct?.id || "new-product"}
+                product={editingProduct}
+                settings={settings}
+                filaments={filaments}
+                printers={printers}
+                packagings={packagings}
+                customAddons={customAddons}
+                onSave={handleSaveProduct}
+                onCancel={() => {
+                  navigateToTab("catalog");
+                }}
+                onDirtyChange={handleDirtyChange}
+              />
+            )}
 
-        {activeTab === "simulator" && (
-          <SimulatorView
-            products={products}
-            settings={settings}
-            filaments={filaments}
-            printers={printers}
-            packagings={packagings}
-            customAddons={customAddons}
-          />
-        )}
+            {activeTab === "simulator" && (
+              <SimulatorView
+                products={products}
+                settings={settings}
+                filaments={filaments}
+                printers={printers}
+                packagings={packagings}
+                customAddons={customAddons}
+              />
+            )}
 
-        {activeTab === "settings" && (
-          <SettingsView
-            products={products}
-            settings={settings}
-            filaments={filaments}
-            printers={printers}
-            packagings={packagings}
-            customAddons={customAddons}
-            onSaveSettings={handleSaveSettings}
-            onSaveFilaments={handleSaveFilaments}
-            onSavePrinters={handleSavePrinters}
-            onSavePackagings={handleSavePackagings}
-            onSaveCustomAddons={handleSaveCustomAddons}
-          />
-        )}
+            {activeTab === "settings" && (
+              <SettingsView
+                products={products}
+                settings={settings}
+                filaments={filaments}
+                printers={printers}
+                packagings={packagings}
+                customAddons={customAddons}
+                onSaveSettings={handleSaveSettings}
+                onSaveFilaments={handleSaveFilaments}
+                onSavePrinters={handleSavePrinters}
+                onSavePackagings={handleSavePackagings}
+                onSaveCustomAddons={handleSaveCustomAddons}
+                onDirtyChange={handleDirtyChange}
+              />
+            )}
+          </Suspense>
+        </ErrorBoundary>
       </main>
 
       {/* Modal de Orçamento WhatsApp / Impressão */}
       {quoteProduct && (
-        <QuoteModal
-          product={quoteProduct}
-          settings={settings}
-          filaments={filaments}
-          printers={printers}
-          packagings={packagings}
-          customAddons={customAddons}
-          initialMargin={quoteMargin}
-          onClose={() => setQuoteProduct(null)}
-        />
+        <ErrorBoundary>
+          <Suspense fallback={null}>
+            <QuoteModal
+              product={quoteProduct}
+              settings={settings}
+              filaments={filaments}
+              printers={printers}
+              packagings={packagings}
+              customAddons={customAddons}
+              initialMargin={quoteMargin}
+              onClose={() => setQuoteProduct(null)}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {/* Notificações Toast */}
