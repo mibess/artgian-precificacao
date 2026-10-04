@@ -94,7 +94,13 @@ export async function fetchProductsFromCloud(): Promise<ProductItem[] | null> {
       query = query.or(`owner_id.eq.${user.id},owner_id.is.null`);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+
+    if (error && (error.code === "42703" || error.message?.includes("owner_id"))) {
+      const fallback = await supabase.from("products").select("*").order("created_at", { ascending: false });
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       console.warn("[Supabase] Erro ao buscar produtos:", error.message);
@@ -159,7 +165,7 @@ export async function saveProductToCloud(product: ProductItem): Promise<boolean>
       .upsert(payload, { onConflict: "id" });
 
     // Fallback se colunas ainda não existirem no schema remoto
-    if (error && error.code === "PGRST204") {
+    if (error && (error.code === "PGRST204" || error.code === "42703" || error.message?.includes("owner_id"))) {
       delete payload.packaging_id;
       delete payload.is_custom_packaging_cost;
       delete payload.owner_id;
@@ -216,7 +222,13 @@ export async function fetchFilamentsFromCloud(): Promise<Filament[] | null> {
       query = query.or(`owner_id.eq.${user.id},owner_id.is.null`);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+    if (error && (error.code === "42703" || error.message?.includes("owner_id"))) {
+      const fallback = await supabase.from("filaments").select("*").order("created_at", { ascending: true });
+      data = fallback.data;
+      error = fallback.error;
+    }
+
     if (error || !data) return null;
 
     return data.map(row => ({
@@ -251,9 +263,15 @@ export async function saveFilamentToCloud(filament: Filament): Promise<boolean> 
     };
     if (user?.id) payload.owner_id = user.id;
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from("filaments")
       .upsert(payload, { onConflict: "id" });
+
+    if (error && (error.code === "PGRST204" || error.code === "42703" || error.message?.includes("owner_id"))) {
+      delete payload.owner_id;
+      const retry = await supabase.from("filaments").upsert(payload, { onConflict: "id" });
+      error = retry.error;
+    }
 
     return !error;
   } catch {
@@ -332,7 +350,13 @@ export async function fetchPrintersFromCloud(): Promise<Printer[] | null> {
       query = query.or(`owner_id.eq.${user.id},owner_id.is.null`);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+    if (error && (error.code === "42703" || error.message?.includes("owner_id"))) {
+      const fallback = await supabase.from("printers").select("*").order("created_at", { ascending: true });
+      data = fallback.data;
+      error = fallback.error;
+    }
+
     if (error || !data) return null;
 
     return data.map(row => ({
@@ -360,9 +384,15 @@ export async function savePrinterToCloud(printer: Printer): Promise<boolean> {
     };
     if (user?.id) payload.owner_id = user.id;
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from("printers")
       .upsert(payload, { onConflict: "id" });
+
+    if (error && (error.code === "PGRST204" || error.code === "42703" || error.message?.includes("owner_id"))) {
+      delete payload.owner_id;
+      const retry = await supabase.from("printers").upsert(payload, { onConflict: "id" });
+      error = retry.error;
+    }
 
     return !error;
   } catch {
@@ -438,7 +468,13 @@ export async function fetchSettingsFromCloud(): Promise<GlobalSettings | null> {
       query = query.eq("id", "default");
     }
 
-    const { data, error } = await query.maybeSingle();
+    let { data, error } = await query.maybeSingle();
+    if (error && (error.code === "42703" || error.message?.includes("owner_id"))) {
+      const fallback = await supabase.from("settings").select("*").eq("id", "default").maybeSingle();
+      data = fallback.data;
+      error = fallback.error;
+    }
+
     if (error || !data) return null;
 
     return {
@@ -474,8 +510,8 @@ export async function saveSettingsToCloud(settings: GlobalSettings): Promise<boo
       .from("settings")
       .upsert(payload, { onConflict: "id" });
 
-    // Fallback se id personalizado der conflito em banco legado
-    if (error && error.code === "23505") {
+    // Fallback se id personalizado der conflito em banco legado ou não tiver owner_id
+    if (error && (error.code === "23505" || error.code === "42703" || error.message?.includes("owner_id"))) {
       payload.id = "default";
       delete payload.owner_id;
       const retry = await supabase.from("settings").upsert(payload, { onConflict: "id" });
@@ -503,7 +539,13 @@ export async function fetchPackagingsFromCloud(): Promise<PackagingItem[] | null
       query = query.or(`owner_id.eq.${user.id},owner_id.is.null`);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+    if (error && (error.code === "42703" || error.message?.includes("owner_id"))) {
+      const fallback = await supabase.from("packagings").select("*").order("created_at", { ascending: true });
+      data = fallback.data;
+      error = fallback.error;
+    }
+
     if (error) {
       if (error.code !== "PGRST205") {
         console.warn("[Supabase] Erro ao buscar embalagens:", error.message);
@@ -563,7 +605,7 @@ export async function savePackagingToCloud(pkg: PackagingItem): Promise<boolean>
       .from("packagings")
       .upsert(payload, { onConflict: "id" });
 
-    if (error && error.code === "PGRST204") {
+    if (error && (error.code === "PGRST204" || error.code === "42703" || error.message?.includes("owner_id"))) {
       delete payload.thank_you_card_price;
       delete payload.custom_addon_ids;
       delete payload.owner_id;
@@ -666,7 +708,13 @@ export async function fetchCustomAddonsFromCloud(): Promise<CustomPackagingAddon
       query = query.or(`owner_id.eq.${user.id},owner_id.is.null`);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+    if (error && (error.code === "42703" || error.message?.includes("owner_id"))) {
+      const fallback = await supabase.from("packaging_addons").select("*").order("name", { ascending: true });
+      data = fallback.data;
+      error = fallback.error;
+    }
+
     if (error || !data) return null;
 
     return data.map(row => ({
