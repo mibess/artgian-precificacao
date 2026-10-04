@@ -4,6 +4,8 @@
 --
 -- Execute UMA vez no SQL Editor do projeto Supabase de DESENVOLVIMENTO.
 -- Cria todas as tabelas já com multiusuário (owner_id) e RLS restrito.
+-- Banco de desenvolvimento criado antes de 2026-10-05? Rode também
+-- supabase/migrations/20261005_cost_fields.sql para adicionar as colunas novas.
 -- Não insere dados de exemplo: o app usa padrões em memória e grava
 -- no banco apenas quando você salvar.
 -- =========================================================
@@ -18,7 +20,9 @@ create table if not exists public.products (
   packaging_cost numeric default 0,
   packaging_id text,
   is_custom_packaging_cost boolean default false,
+  packaging_mode text not null default 'perBatch' check (packaging_mode in ('perBatch', 'perUnit')),
   accessories_cost numeric default 0,
+  labor_hours numeric not null default 0,
   variable_cost_percent numeric,
   notes text default '',
   owner_id uuid references auth.users(id) on delete cascade default auth.uid(),
@@ -53,6 +57,9 @@ create table if not exists public.settings (
   default_filament_price_per_kg numeric not null default 105.00,
   default_printer_watts numeric not null default 110,
   default_variable_cost_percent numeric not null default 10,
+  machine_cost_per_hour numeric not null default 0,
+  labor_cost_per_hour numeric not null default 0,
+  variable_cost_applies_to_packaging boolean not null default true,
   marketplaces jsonb not null default '[]'::jsonb,
   owner_id uuid references auth.users(id) on delete cascade default auth.uid(),
   updated_at timestamptz default now()
