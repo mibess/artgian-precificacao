@@ -461,18 +461,22 @@ export async function fetchSettingsFromCloud(): Promise<GlobalSettings | null> {
 
   try {
     const user = await getCurrentUser();
-    let query = supabase.from("settings").select("*");
+    let data: any = null;
+    let error: any = null;
+
     if (user?.id) {
-      query = query.or(`owner_id.eq.${user.id},id.eq.default`);
-    } else {
-      query = query.eq("id", "default");
+      const userRes = await supabase.from("settings").select("*").eq("owner_id", user.id).maybeSingle();
+      if (userRes.data) {
+        data = userRes.data;
+      } else if (userRes.error && userRes.error.code !== "42703") {
+        error = userRes.error;
+      }
     }
 
-    let { data, error } = await query.maybeSingle();
-    if (error && (error.code === "42703" || error.message?.includes("owner_id"))) {
-      const fallback = await supabase.from("settings").select("*").eq("id", "default").maybeSingle();
-      data = fallback.data;
-      error = fallback.error;
+    if (!data && !error) {
+      const defaultRes = await supabase.from("settings").select("*").eq("id", "default").maybeSingle();
+      data = defaultRes.data;
+      error = defaultRes.error;
     }
 
     if (error || !data) return null;
@@ -495,8 +499,18 @@ export async function saveSettingsToCloud(settings: GlobalSettings): Promise<boo
 
   try {
     const user = await getCurrentUser();
+    
+    // Descobre se o usuário já possui um registro de configurações
+    let targetId = user?.id ? `settings-${user.id}` : "default";
+    if (user?.id) {
+      const existing = await supabase.from("settings").select("id").eq("owner_id", user.id).maybeSingle();
+      if (existing?.data?.id) {
+        targetId = existing.data.id;
+      }
+    }
+
     const payload: any = {
-      id: user?.id ? `settings-${user.id}` : "default",
+      id: targetId,
       energy_kwh_price: settings.energyKwhPrice,
       default_filament_price_per_kg: settings.defaultFilamentPricePerKg,
       default_printer_watts: settings.defaultPrinterWatts,
@@ -649,7 +663,7 @@ export async function saveAllPackagingsToCloud(packagings: PackagingItem[]): Pro
         .from("packagings")
         .upsert(payload, { onConflict: "id" });
 
-      if (error && error.code === "PGRST204") {
+      if (error && (error.code === "PGRST204" || error.code === "42703" || error.message?.includes("owner_id"))) {
         const fallback = payload.map(p => {
           const c: any = { ...p };
           delete c.thank_you_card_price;
@@ -746,9 +760,19 @@ export async function saveAllCustomAddonsToCloud(addons: CustomPackagingAddon[])
     }));
 
     if (payload.length > 0) {
-      const { error } = await supabase
+      let { error } = await supabase
         .from("packaging_addons")
         .upsert(payload, { onConflict: "id" });
+
+      if (error && (error.code === "PGRST204" || error.code === "42703" || error.message?.includes("owner_id"))) {
+        const fallback = payload.map(p => {
+          const c: any = { ...p };
+          delete c.owner_id;
+          return c;
+        });
+        const retry = await supabase.from("packaging_addons").upsert(fallback, { onConflict: "id" });
+        error = retry.error;
+      }
       if (error) return false;
     }
 
