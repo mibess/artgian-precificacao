@@ -6,7 +6,13 @@ import {
   simulateCustomSalePrice,
   formatBRL,
   roundMoney,
-  calculateMarketplaceFee
+  calculateMarketplaceFee,
+  calculateRequiredSalePrice,
+  formatNumber,
+  formatPercent,
+  describeMarketplaceFees,
+  getPrimaryMarketplace,
+  pickMarginRow
 } from "../src/utils/calculator";
 import { ProductItem, GlobalSettings, MarketplaceConfig } from "../src/types/pricing";
 
@@ -134,5 +140,81 @@ describe("calculator - Calibração dos Produtos de Referência", () => {
     expect(roundMoney(10)).toBe(10);
     const brl = formatBRL(12.5);
     expect(brl).toContain("12,50");
+  });
+});
+
+describe("calculator - recomposição de preço em marketplaces", () => {
+  const shopee: MarketplaceConfig = {
+    id: "shopee", name: "Shopee", commissionPercent: 20, fixedFee: 4, enabled: true, colorBadge: ""
+  };
+
+  it("calculateRequiredSalePrice faz o gross-up padrão (comissão + taxa fixa)", () => {
+    // (50 + 4) / 0.8 = 67.50
+    expect(calculateRequiredSalePrice(50, shopee)).toBeCloseTo(67.5, 6);
+    const fee = calculateMarketplaceFee(67.5, shopee);
+    expect(67.5 - fee).toBeCloseTo(50, 2);
+  });
+
+  it("respeita o teto de comissão", () => {
+    const mp: MarketplaceConfig = { ...shopee, commissionCap: 50 };
+    // Sem teto: (400 + 4) / 0.8 = 505 -> comissão 101 > 50 -> preço = 400 + 50 + 4
+    expect(calculateRequiredSalePrice(400, mp)).toBeCloseTo(454, 6);
+    expect(454 - calculateMarketplaceFee(454, mp)).toBeCloseTo(400, 2);
+  });
+
+  it("não cobra taxa fixa abaixo do preço mínimo configurado", () => {
+    const mp: MarketplaceConfig = { ...shopee, fixedFeeMinPrice: 20 };
+    // Sem taxa fixa: 10 / 0.8 = 12.50 (< 20) -> taxa fixa não incide
+    expect(calculateRequiredSalePrice(10, mp)).toBeCloseTo(12.5, 6);
+    expect(12.5 - calculateMarketplaceFee(12.5, mp)).toBeCloseTo(10, 2);
+    // Acima do mínimo volta a incidir: (50 + 4) / 0.8
+    expect(calculateRequiredSalePrice(50, mp)).toBeCloseTo(67.5, 6);
+  });
+
+  it("a tabela de margens mantém o lucro líquido do marketplace igual ao da venda direta", () => {
+    const settings: GlobalSettings = {
+      ...defaultSettings,
+      marketplaces: [{ ...shopee, fixedFeeMinPrice: 30 }]
+    };
+    const urso = defaultProducts.find(p => p.id === "prod-urso-natal")!;
+    const pricing = calculatePricing(urso, settings, defaultFilaments, defaultPrinters);
+    for (const row of pricing.margins) {
+      const mp = row.marketplacePrices["shopee"];
+      expect(Math.abs(mp.netProfit - row.directProfit)).toBeLessThanOrEqual(0.02);
+    }
+  });
+
+  it("produto de custo zero ainda cobre a taxa fixa no marketplace", () => {
+    expect(calculateRequiredSalePrice(0, shopee)).toBeCloseTo(5, 6);
+  });
+
+  it("formatadores pt-BR usam vírgula decimal", () => {
+    expect(formatNumber(12.5)).toBe("12,5");
+    expect(formatNumber(1234.567, 2)).toBe("1.234,57");
+    expect(formatPercent(52)).toBe("52,0%");
+    expect(describeMarketplaceFees(shopee)).toMatch(/^20% \+ R\$\s4,00$/);
+  });
+});
+
+describe("calculator - helpers de exibição", () => {
+  it("getPrimaryMarketplace prioriza a Shopee ativa e cai para outro canal ativo", () => {
+    expect(getPrimaryMarketplace(defaultSettings)?.id).toBe("shopee");
+    const semShopee: GlobalSettings = {
+      ...defaultSettings,
+      marketplaces: defaultSettings.marketplaces.map(m => ({ ...m, enabled: m.id === "ml_premium" }))
+    };
+    expect(getPrimaryMarketplace(semShopee)?.id).toBe("ml_premium");
+    const nenhum: GlobalSettings = {
+      ...defaultSettings,
+      marketplaces: defaultSettings.marketplaces.map(m => ({ ...m, enabled: false }))
+    };
+    expect(getPrimaryMarketplace(nenhum)).toBeUndefined();
+  });
+
+  it("pickMarginRow encontra a margem escolhida ou usa 100% como padrão", () => {
+    const rena = defaultProducts.find(p => p.id === "prod-rena-branca")!;
+    const pricing = calculatePricing(rena, defaultSettings, defaultFilaments, defaultPrinters);
+    expect(pickMarginRow(pricing, 0.5).marginPercent).toBe(0.5);
+    expect(pickMarginRow(pricing, 0.77).marginPercent).toBe(1.0);
   });
 });

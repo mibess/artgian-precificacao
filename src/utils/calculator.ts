@@ -40,15 +40,48 @@ export function roundMoney(amount: number): number {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
+const brlFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+
 /**
  * Formata valores numéricos para moeda Real (pt-BR)
  */
 export function formatBRL(amount: number): string {
-  if (isNaN(amount) || !isFinite(amount)) return "R$ 0,00";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL"
-  }).format(amount);
+  if (typeof amount !== "number" || isNaN(amount) || !isFinite(amount)) return "R$ 0,00";
+  return brlFormatter.format(amount);
+}
+
+const numberFormatters = new Map<string, Intl.NumberFormat>();
+
+/**
+ * Formata números no padrão pt-BR (vírgula decimal), sem zeros desnecessários por padrão.
+ * Ex.: formatNumber(12.5) -> "12,5"; formatNumber(52, 1, 1) -> "52,0"
+ */
+export function formatNumber(value: number, maxDecimals = 2, minDecimals = 0): string {
+  const safe = typeof value === "number" && isFinite(value) ? value : 0;
+  const key = `${minDecimals}-${maxDecimals}`;
+  let formatter = numberFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("pt-BR", {
+      minimumFractionDigits: minDecimals,
+      maximumFractionDigits: maxDecimals
+    });
+    numberFormatters.set(key, formatter);
+  }
+  return formatter.format(safe);
+}
+
+/** Percentual com uma casa decimal em pt-BR. Ex.: 52 -> "52,0%" */
+export function formatPercent(value: number, decimals = 1): string {
+  return `${formatNumber(value, decimals, decimals)}%`;
+}
+
+/** Descrição curta das taxas de um canal. Ex.: "20% + R$ 4,00" */
+export function describeMarketplaceFees(mp: Pick<MarketplaceConfig, "commissionPercent" | "fixedFee">): string {
+  const commission = `${formatNumber(mp.commissionPercent || 0, 2)}%`;
+  return (mp.fixedFee || 0) > 0 ? `${commission} + ${formatBRL(mp.fixedFee)}` : commission;
 }
 
 /**
@@ -76,6 +109,39 @@ export function calculateMarketplaceFee(
   return roundMoney(commission + fixedFee);
 }
 
+/**
+ * Preço de venda necessário no marketplace para que, após comissão e taxa fixa,
+ * sobre exatamente `netAmount` (o valor que se receberia na venda direta).
+ *
+ * Considera o teto de comissão (`commissionCap`) e a faixa de preço sem taxa fixa
+ * (`fixedFeeMinPrice`): se o preço necessário sem a taxa fixa ficar abaixo do mínimo,
+ * a taxa fixa não incide e o preço é menor.
+ */
+export function calculateRequiredSalePrice(netAmount: number, marketplace: MarketplaceConfig): number {
+  if (!isFinite(netAmount)) return 0;
+  const net = Math.max(0, netAmount);
+
+  const commRate = Math.min(Math.max((marketplace.commissionPercent || 0) / 100, 0), 0.999);
+  const cap = marketplace.commissionCap && marketplace.commissionCap > 0 ? marketplace.commissionCap : undefined;
+
+  const grossUp = (fixedFee: number): number => {
+    let price = (net + fixedFee) / (1 - commRate);
+    if (cap !== undefined && price * commRate > cap) {
+      price = net + cap + fixedFee;
+    }
+    return price;
+  };
+
+  const fixedFee = marketplace.fixedFee || 0;
+  if (fixedFee > 0 && marketplace.fixedFeeMinPrice && marketplace.fixedFeeMinPrice > 0) {
+    const withoutFixedFee = grossUp(0);
+    if (withoutFixedFee < marketplace.fixedFeeMinPrice) {
+      return withoutFixedFee;
+    }
+  }
+  return grossUp(fixedFee);
+}
+
 export function computeMarginRow(
   marginPercent: number,
   totalCost: number,
@@ -97,30 +163,13 @@ export function computeMarginRow(
   for (const mp of marketplaces) {
     if (!mp.enabled) continue;
 
-    const commRate = Math.min(Math.max((mp.commissionPercent || 0) / 100, 0), 0.999);
-    const divisor = 1 - commRate;
-
     // Preço do lote inteiro no marketplace
-    let salePrice = divisor > 0
-      ? (directSalePrice + (mp.fixedFee || 0)) / divisor
-      : directSalePrice;
-    
-    // Se houver teto de comissão, ajusta
-    if (mp.commissionCap && (salePrice * commRate) > mp.commissionCap) {
-      salePrice = directSalePrice + mp.commissionCap + (mp.fixedFee || 0);
-    }
-    salePrice = roundMoney(salePrice);
+    const salePrice = roundMoney(calculateRequiredSalePrice(directSalePrice, mp));
     const feeAmount = calculateMarketplaceFee(salePrice, mp);
     const netProfit = roundMoney(salePrice - feeAmount - totalCost);
 
     // Preço unitário individual no marketplace
-    let unitSalePrice = divisor > 0
-      ? (directUnitSalePrice + (mp.fixedFee || 0)) / divisor
-      : directUnitSalePrice;
-    if (mp.commissionCap && (unitSalePrice * commRate) > mp.commissionCap) {
-      unitSalePrice = directUnitSalePrice + mp.commissionCap + (mp.fixedFee || 0);
-    }
-    unitSalePrice = roundMoney(unitSalePrice);
+    const unitSalePrice = roundMoney(calculateRequiredSalePrice(directUnitSalePrice, mp));
     const unitFeeAmount = calculateMarketplaceFee(unitSalePrice, mp);
     const unitNetProfit = roundMoney(unitSalePrice - unitFeeAmount - unitCost);
 
@@ -142,6 +191,25 @@ export function computeMarginRow(
     directUnitProfit,
     marketplacePrices
   };
+}
+
+/**
+ * Linha da tabela de margens para a margem escolhida (com fallback para 100% e depois a primeira).
+ */
+export function pickMarginRow(pricing: PricingBreakdown, marginPercent: number): MarginRow {
+  const target = Number(marginPercent);
+  return pricing.margins.find(m => Math.abs(m.marginPercent - target) < 0.005)
+    || pricing.margins.find(m => Math.abs(m.marginPercent - 1.0) < 0.005)
+    || pricing.margins[0];
+}
+
+/**
+ * Canal de marketplace exibido em destaque: a Shopee quando ativa; senão o primeiro canal ativo.
+ * Retorna `undefined` quando nenhum marketplace está ativo.
+ */
+export function getPrimaryMarketplace(settings: GlobalSettings): MarketplaceConfig | undefined {
+  const enabled = settings.marketplaces.filter(m => m.enabled);
+  return enabled.find(m => m.id === "shopee") || enabled[0];
 }
 
 export function findMarginRow(
