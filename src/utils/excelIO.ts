@@ -1,6 +1,22 @@
 import * as XLSX from "xlsx";
 import { ProductItem, GlobalSettings, Filament, Printer, PackagingItem, CustomPackagingAddon } from "../types/pricing";
-import { calculatePricing, findMarginRow } from "./calculator";
+import { calculatePricing, findMarginRow, getPrimaryMarketplace, describeMarketplaceFees } from "./calculator";
+
+/**
+ * Nome de aba válido e único (Excel: até 31 caracteres, sem : \\ / ? * [ ] e sem repetição).
+ * Produtos com nomes iguais nos 30 primeiros caracteres geravam abas duplicadas e quebravam a exportação.
+ */
+export function uniqueSheetName(name: string, used: Set<string>): string {
+  const base = (name || "PRODUTO").replace(/[:\\/?*\[\]]/g, "-").toUpperCase().slice(0, 31) || "PRODUTO";
+  let candidate = base;
+  let counter = 2;
+  while (used.has(candidate)) {
+    const suffix = ` (${counter++})`;
+    candidate = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(candidate);
+  return candidate;
+}
 
 /**
  * Exporta catálogo completo e abas individuais de cada produto em formato Excel (.xlsx)
@@ -14,36 +30,44 @@ export function exportToExcel(
   customAddons: CustomPackagingAddon[] = []
 ) {
   const wb = XLSX.utils.book_new();
+  const marketplace = getPrimaryMarketplace(settings);
+  const mpName = marketplace?.name || "Marketplace";
+
+  // Cálculo único por produto (reaproveitado no resumo e nas abas individuais)
+  const pricingById = new Map(products.map(prod => [
+    prod.id,
+    calculatePricing(prod, settings, filaments, printers, packagings, customAddons)
+  ]));
 
   // 1. Aba Resumo / Catálogo Consolidado
-  const summaryRows: any[] = [
-    [
-      "Produto",
-      "Categoria",
-      "Qtd no Lote",
-      "Peso (g)",
-      "Tempo de Impressão",
-      "Custo Filamento (R$)",
-      "Custo Energia (R$)",
-      "Embalagem (R$)",
-      "Acessórios (R$)",
-      "Custo Total Lote (R$)",
-      "Custo Unitário (R$)",
-      "Preço Direto 50% (R$)",
-      "Preço Direto 100% (R$)",
-      "Preço Shopee 50% (R$)",
-      "Preço Shopee 100% (R$)"
-    ]
+  const summaryHeader: any[] = [
+    "Produto",
+    "Categoria",
+    "Qtd no Lote",
+    "Peso (g)",
+    "Tempo de Impressão",
+    "Custo Filamento (R$)",
+    "Custo Energia (R$)",
+    "Máquina (R$)",
+    "Mão de Obra (R$)",
+    "Embalagem (R$)",
+    "Acessórios (R$)",
+    "Custo Total Lote (R$)",
+    "Custo Unitário (R$)",
+    "Preço Direto 50% (R$)",
+    "Preço Direto 100% (R$)"
   ];
+  if (marketplace) {
+    summaryHeader.push(`Preço ${mpName} 50% (R$)`, `Preço ${mpName} 100% (R$)`);
+  }
+  const summaryRows: any[] = [summaryHeader];
 
   for (const prod of products) {
-    const r = calculatePricing(prod, settings, filaments, printers, packagings, customAddons);
+    const r = pricingById.get(prod.id)!;
     const m50 = findMarginRow(r, 0.5, settings, prod.quantityInBatch);
     const m100 = findMarginRow(r, 1.0, settings, prod.quantityInBatch);
-    const shopee50 = m50?.marketplacePrices["shopee"]?.salePrice ?? 0;
-    const shopee100 = m100?.marketplacePrices["shopee"]?.salePrice ?? 0;
 
-    summaryRows.push([
+    const row: any[] = [
       prod.name,
       prod.category || "Geral",
       prod.quantityInBatch,
@@ -51,24 +75,32 @@ export function exportToExcel(
       r.totalTimeString,
       r.filamentCost,
       r.energyCost,
+      r.machineCost,
+      r.laborCost,
       r.packagingCost,
       r.accessoriesCost,
       r.totalCost,
       r.unitCost,
       m50?.directSalePrice ?? 0,
-      m100?.directSalePrice ?? 0,
-      shopee50,
-      shopee100
-    ]);
+      m100?.directSalePrice ?? 0
+    ];
+    if (marketplace) {
+      row.push(
+        m50?.marketplacePrices[marketplace.id]?.salePrice ?? 0,
+        m100?.marketplacePrices[marketplace.id]?.salePrice ?? 0
+      );
+    }
+    summaryRows.push(row);
   }
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
   XLSX.utils.book_append_sheet(wb, wsSummary, "CATÁLOGO GERAL");
 
   // 2. Abas individuais por produto (compatível com a planilha original)
+  const usedSheetNames = new Set<string>(["CATÁLOGO GERAL"]);
   for (const prod of products) {
-    const r = calculatePricing(prod, settings, filaments, printers, packagings, customAddons);
-    const safeSheetName = prod.name.slice(0, 30).replace(/[:\\/?*\[\]]/g, "-").toUpperCase();
+    const r = pricingById.get(prod.id)!;
+    const safeSheetName = uniqueSheetName(prod.name, usedSheetNames);
 
     const sheetData: any[] = [
       [prod.name.toUpperCase()],
@@ -81,9 +113,15 @@ export function exportToExcel(
     ];
 
     for (const p of prod.parts) {
-      const kw = settings.defaultPrinterWatts / 1000;
-      const energyCost = p.printTimeHours * kw * settings.energyKwhPrice;
-      const filCost = (p.filamentGrams / 1000) * settings.defaultFilamentPricePerKg;
+      // Custo da parte com o mesmo cálculo do sistema (respeita filamento e impressora de cada parte)
+      const partPricing = calculatePricing(
+        { ...prod, parts: [p], packagingCost: 0, packagingId: null, isCustomPackagingCost: true, accessoriesCost: 0, laborHours: 0 },
+        settings,
+        filaments,
+        printers
+      );
+      const energyCost = partPricing.energyCost;
+      const filCost = partPricing.filamentCost;
       sheetData.push([
         p.name,
         `${p.filamentGrams} g`,
@@ -98,6 +136,8 @@ export function exportToExcel(
     sheetData.push(["Item", "Valor"]);
     sheetData.push(["Custo Filamento", r.filamentCost]);
     sheetData.push(["Custo Energia", r.energyCost]);
+    if (r.machineCost > 0) sheetData.push(["Máquina (depreciação)", r.machineCost]);
+    if (r.laborCost > 0) sheetData.push(["Mão de Obra", r.laborCost]);
     sheetData.push(["Embalagem", r.packagingCost]);
     sheetData.push(["Acessórios", r.accessoriesCost]);
     const varLabel = r.isCustomVariableCost
@@ -115,15 +155,17 @@ export function exportToExcel(
       sheetData.push([m.marginLabel, m.directSalePrice, m.directProfit]);
     }
 
-    sheetData.push([]);
-    sheetData.push(["VENDA DIRETA SHOPEE"]);
-    sheetData.push(["Comissão 20% - Taxa Fixa R$ 4,00"]);
-    sheetData.push(["Markup / Margem", "Valor de Venda", "Lucro Líquido (R$)"]);
+    if (marketplace) {
+      sheetData.push([]);
+      sheetData.push([`VENDA ${mpName.toUpperCase()}`]);
+      sheetData.push([`Taxas: ${describeMarketplaceFees(marketplace)}`]);
+      sheetData.push(["Markup / Margem", "Valor de Venda", "Lucro Líquido (R$)"]);
 
-    for (const m of r.margins) {
-      const shopee = m.marketplacePrices["shopee"];
-      if (shopee) {
-        sheetData.push([m.marginLabel, shopee.salePrice, shopee.netProfit]);
+      for (const m of r.margins) {
+        const mp = m.marketplacePrices[marketplace.id];
+        if (mp) {
+          sheetData.push([m.marginLabel, mp.salePrice, mp.netProfit]);
+        }
       }
     }
 

@@ -1,5 +1,22 @@
-import JSZip from "jszip";
 import { parseTimeToHours, formatHoursToTimeString } from "./timeParser";
+
+/** Tamanho lido do início e do fim de G-codes grandes (os metadados ficam no cabeçalho/rodapé). */
+const GCODE_HEAD_BYTES = 150000;
+const GCODE_TAIL_BYTES = 80000;
+
+/**
+ * Decodifica só o cabeçalho e o rodapé de um G-code já em memória (ex.: extraído do .3mf),
+ * evitando converter centenas de MB em string.
+ */
+export function decodeGcodeHeadTail(bytes: Uint8Array): string {
+  const decoder = new TextDecoder("utf-8");
+  if (bytes.length <= GCODE_HEAD_BYTES + GCODE_TAIL_BYTES) {
+    return decoder.decode(bytes);
+  }
+  const head = decoder.decode(bytes.subarray(0, GCODE_HEAD_BYTES));
+  const tail = decoder.decode(bytes.subarray(bytes.length - GCODE_TAIL_BYTES));
+  return head + "\n" + tail;
+}
 
 export interface SlicerPartBreakdown {
   name: string;
@@ -299,11 +316,11 @@ export async function parseSlicerFile(file: File): Promise<SlicerParseResult> {
   if (fileName.endsWith(".gcode") || fileName.endsWith(".txt") || fileName.endsWith(".log")) {
     let text = "";
     if (typeof file.slice === "function" && typeof file.size === "number" && file.size > 0) {
-      const headBlob = file.slice(0, 150000);
+      const headBlob = file.slice(0, GCODE_HEAD_BYTES);
       const headText = await headBlob.text();
       let tailText = "";
-      if (file.size > 150000) {
-        const tailStart = Math.max(150000, file.size - 80000);
+      if (file.size > GCODE_HEAD_BYTES) {
+        const tailStart = Math.max(GCODE_HEAD_BYTES, file.size - GCODE_TAIL_BYTES);
         const tailBlob = file.slice(tailStart, file.size);
         tailText = await tailBlob.text();
       }
@@ -317,6 +334,8 @@ export async function parseSlicerFile(file: File): Promise<SlicerParseResult> {
   // 2. Arquivo .3mf (pacote ZIP)
   if (fileName.endsWith(".3mf")) {
     try {
+      // JSZip só é baixado quando um .3mf é importado (fora do bundle inicial)
+      const { default: JSZip } = await import("jszip");
       const zip = await JSZip.loadAsync(file);
 
       // A) Extrair metadados do modelo de 3D/3dmodel.model
@@ -358,9 +377,8 @@ export async function parseSlicerFile(file: File): Promise<SlicerParseResult> {
 
         for (let i = 0; i < plateFiles.length; i++) {
           const pf = plateFiles[i];
-          const plateText = await pf.async("text");
-          const slice = plateText.slice(0, 150000) + "\n" + plateText.slice(-80000);
-          const parsedPlate = parseSlicerText(slice);
+          const plateBytes = await pf.async("uint8array");
+          const parsedPlate = parseSlicerText(decodeGcodeHeadTail(plateBytes));
 
           if (parsedPlate.detected) {
             detectedAnyPlate = true;
