@@ -80,17 +80,24 @@ async function runBackup() {
     fs.mkdirSync(backupDir, { recursive: true });
   }
 
+  let totalRows = 0;
   for (const table of tables) {
     try {
       const data = await fetchTable(table);
       if (data !== null) {
         backupData.tables[table] = data;
         backupData.metadata.tablesBackedUp.push(table);
+        totalRows += data.length;
         console.log(`✓ Tabela '${table}': ${data.length} registros salvos.`);
       }
     } catch (e) {
       console.error(`✗ Erro ao extrair '${table}':`, e.message);
     }
+  }
+
+  if (totalRows === 0 && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.log(`\n💡 Nota: Com o Row Level Security (RLS) ativo no Supabase, a chave anônima (anon key) não lê registros privados sem sessão de usuário.`);
+    console.log(`   Para backups administrativos completos via terminal, configure SUPABASE_SERVICE_ROLE_KEY no seu .env.local.`);
   }
 
   // 1. Salvar JSON
