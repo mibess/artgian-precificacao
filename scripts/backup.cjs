@@ -56,7 +56,7 @@ async function runBackup() {
   console.log(`Timestamp: ${timestamp} | URL: ${url}`);
   console.log(`======================================================\n`);
 
-  const tables = ["settings", "printers", "filaments", "packagings", "products"];
+  const tables = ["settings", "printers", "filaments", "packagings", "packaging_addons", "products"];
   const backupData = {
     metadata: {
       timestamp: now.toISOString(),
