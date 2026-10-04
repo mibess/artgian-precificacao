@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { ProductItem, GlobalSettings, Filament, Printer } from "../types/pricing";
+import { 
+  ProductItem, 
+  GlobalSettings, 
+  Filament, 
+  Printer,
+  PackagingItem,
+  CustomPackagingAddon
+} from "../types/pricing";
 import { calculatePricing, AVAILABLE_MARGIN_OPTIONS } from "../utils/calculator";
 import { ProductionSheetA4 } from "./ProductionSheetA4";
 import { CommercialQuoteA4 } from "./CommercialQuoteA4";
@@ -22,6 +29,8 @@ interface QuoteModalProps {
   settings: GlobalSettings;
   filaments: Filament[];
   printers: Printer[];
+  packagings?: PackagingItem[];
+  customAddons?: CustomPackagingAddon[];
   initialMargin?: number;
   onClose: () => void;
 }
@@ -31,6 +40,8 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
   settings,
   filaments,
   printers,
+  packagings = [],
+  customAddons = [],
   initialMargin = 1.0,
   onClose
 }) => {
@@ -45,7 +56,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
   const [copied, setCopied] = useState(false);
 
-  const pricing = calculatePricing(product, settings, filaments, printers);
+  const pricing = calculatePricing(product, settings, filaments, printers, packagings, customAddons);
   const numMargin = Number(selectedMargin);
   const marginRow = pricing.margins.find(m => Math.abs(m.marginPercent - numMargin) < 0.005)
     || pricing.margins.find(m => Math.abs(m.marginPercent - 1.0) < 0.005)
@@ -89,11 +100,15 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
     return msg;
   };
 
-  const handleCopyWhatsApp = () => {
-    const text = generateWhatsAppMessage();
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
+  const handleCopyWhatsApp = async () => {
+    try {
+      const text = generateWhatsAppMessage();
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      alert("Não foi possível copiar automaticamente para a área de transferência. Copie o texto manualmente.");
+    }
   };
 
   return (

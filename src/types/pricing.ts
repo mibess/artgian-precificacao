@@ -22,6 +22,8 @@ export interface MarketplaceConfig {
   fixedFee: number; // e.g. 4.00
   enabled: boolean;
   colorBadge: string;
+  commissionCap?: number; // Teto máximo da comissão em R$ (opcional)
+  fixedFeeMinPrice?: number; // Preço mínimo a partir do qual incide taxa fixa (opcional)
 }
 
 export interface GlobalSettings {
@@ -29,6 +31,9 @@ export interface GlobalSettings {
   defaultFilamentPricePerKg: number; // e.g. 105.00
   defaultPrinterWatts: number; // e.g. 95
   defaultVariableCostPercent: number; // e.g. 10 (%)
+  machineCostPerHour?: number; // Depreciação e manutenção da máquina (R$/hora) - opcional
+  laborCostPerHour?: number; // Custo de hora de mão de obra / acabamento (R$/hora) - opcional
+  variableCostAppliesToPackaging?: boolean; // Se a taxa de perda incide sobre embalagem e acessórios (default: true)
   marketplaces: MarketplaceConfig[];
 }
 
@@ -61,22 +66,83 @@ export interface CustomPackagingAddon {
 export interface PackagingItem {
   id: string;
   name: string; // Ex: "CAIXA PAPELAO 20X15X10"
-  // Dimensões (cm)
   width: number; // Largura (cm)
   height: number; // Altura (cm)
   length: number; // Comprimento (cm)
-  // Custos unitários dos componentes da embalagem (R$)
   boxPrice: number; // Valor da caixa
   bubbleWrapPrice: number; // Valor do plástico bolha
   stickerPrice: number; // Valor do adesivo
   tissuePaperPrice: number; // Valor da seda
   thankYouCardPrice: number; // Valor do cartão de agradecimento (padrão R$ 0,50)
   otherPrice: number; // Qualquer outro personalizado avulso
-  otherDescription?: string; // Descrição opcional do item personalizado avulso (ex: "Fita de cetim", "Tag")
-  customAddonIds?: string[]; // IDs dos personalizados gravados ativos para esta embalagem
-  customItems?: PackagingCustomItem[]; // Lista dinâmica de itens extras personalizados adicionais
+  otherDescription?: string; // Descrição opcional do item personalizado avulso
+  customAddonIds?: string[]; // IDs dos personalizados gravados ativos
+  customItems?: PackagingCustomItem[]; // Itens extras dinâmicos
 }
 
+export interface ProductItem {
+  id: string;
+  name: string;
+  category: string;
+  quantityInBatch: number; // e.g. 1 (Rena), 16 (Chaveiros)
+  isMultiPart: boolean;
+  parts: ProductPart[];
+  packagingCost: number; // e.g. 3.50 (custo total da embalagem)
+  packagingId?: string | null; // ID da embalagem pré-cadastrada selecionada
+  isCustomPackagingCost?: boolean; // Se true, o usuário inseriu um valor manual customizado
+  packagingMode?: "perBatch" | "perUnit"; // "perBatch" = 1 embalagem para o lote todo; "perUnit" = 1 por unidade
+  accessoriesCost: number; // e.g. 9.60
+  laborHours?: number; // Horas dedicadas de mão de obra / pós-processamento (default 0)
+  variableCostPercent?: number | null; // null = usa o padrão global do sistema
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MarginRow {
+  marginPercent: number; // Markup sobre o custo (0.2, 0.5, 1.0, etc.)
+  marginLabel: string; // "20%", "50%", "100%", "300%"
+  
+  // Venda Direta
+  directSalePrice: number;
+  directProfit: number;
+  directUnitSalePrice: number;
+  directUnitProfit: number;
+
+  // Marketplaces
+  marketplacePrices: {
+    [marketplaceId: string]: {
+      salePrice: number;
+      netProfit: number;
+      unitSalePrice: number;
+      unitNetProfit: number;
+      feeAmount: number;
+    }
+  };
+}
+
+export interface PricingBreakdown {
+  totalGrams: number;
+  totalTimeHours: number;
+  totalTimeString: string;
+  filamentCost: number;
+  energyCost: number;
+  machineCost: number;
+  laborCost: number;
+  packagingCost: number;
+  accessoriesCost: number;
+  subtotal: number;
+  variableCost: number;
+  variableCostPercent: number;
+  isCustomVariableCost: boolean;
+  totalCost: number; // Custo do Produto no lote
+  unitCost: number; // Custo do Produto unitário
+  margins: MarginRow[];
+}
+
+/**
+ * Re-exporta calculatePackagingTotal para manter compatibilidade com módulos legados
+ */
 export function calculatePackagingTotal(
   pkg: PackagingItem,
   customAddons: CustomPackagingAddon[] = []
@@ -104,60 +170,3 @@ export function calculatePackagingTotal(
     extras
   );
 }
-
-export interface ProductItem {
-  id: string;
-  name: string;
-  category: string;
-  quantityInBatch: number; // e.g. 1 (Rena), 16 (Chaveiros)
-  isMultiPart: boolean;
-  parts: ProductPart[];
-  packagingCost: number; // e.g. 3.50 (custo total da embalagem considerado na precificação)
-  packagingId?: string | null; // ID da embalagem pré-cadastrada selecionada (se não for personalizada)
-  isCustomPackagingCost?: boolean; // Se true, o usuário inseriu um valor manual customizado
-  accessoriesCost: number; // e.g. 9.60
-  variableCostPercent?: number | null; // null = usa o padrão global do sistema; number = margem personalizada
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface MarginRow {
-  marginPercent: number; // e.g. 0.2 (20%), 0.3, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0
-  marginLabel: string; // "20%", "50%", "100%", "300%"
-  
-  // Venda Direta
-  directSalePrice: number;
-  directProfit: number;
-  directUnitSalePrice: number;
-  directUnitProfit: number;
-
-  // Marketplace prices (Shopee, etc.)
-  marketplacePrices: {
-    [marketplaceId: string]: {
-      salePrice: number;
-      netProfit: number;
-      unitSalePrice: number;
-      unitNetProfit: number;
-      feeAmount: number;
-    }
-  };
-}
-
-export interface PricingBreakdown {
-  totalGrams: number;
-  totalTimeHours: number;
-  totalTimeString: string;
-  filamentCost: number;
-  energyCost: number;
-  packagingCost: number;
-  accessoriesCost: number;
-  subtotal: number;
-  variableCost: number;
-  variableCostPercent: number;
-  isCustomVariableCost: boolean;
-  totalCost: number; // Custo do Produto no lote
-  unitCost: number; // Custo do Produto unitário
-  margins: MarginRow[];
-}
-

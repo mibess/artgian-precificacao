@@ -1,9 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { 
   ProductItem, 
   GlobalSettings, 
   Filament, 
-  Printer 
+  Printer,
+  PackagingItem,
+  CustomPackagingAddon,
+  PricingBreakdown
 } from "../types/pricing";
 import { calculatePricing, AVAILABLE_MARGIN_OPTIONS } from "../utils/calculator";
 import { 
@@ -31,6 +34,8 @@ interface ProductListProps {
   settings: GlobalSettings;
   filaments: Filament[];
   printers: Printer[];
+  packagings?: PackagingItem[];
+  customAddons?: CustomPackagingAddon[];
   onEditProduct: (product: ProductItem) => void;
   onDuplicateProduct: (product: ProductItem) => void;
   onDeleteProduct: (productId: string) => void;
@@ -43,6 +48,8 @@ export const ProductList: React.FC<ProductListProps> = ({
   settings,
   filaments,
   printers,
+  packagings = [],
+  customAddons = [],
   onEditProduct,
   onDuplicateProduct,
   onDeleteProduct,
@@ -78,14 +85,23 @@ export const ProductList: React.FC<ProductListProps> = ({
     return matchesSearch && matchesCategory;
   });
 
+  // Mapa de precificação memoizado para evitar recalcular a cada render
+  const pricingMap = useMemo(() => {
+    const map = new Map<string, PricingBreakdown>();
+    for (const p of products) {
+      map.set(p.id, calculatePricing(p, settings, filaments, printers, packagings, customAddons));
+    }
+    return map;
+  }, [products, settings, filaments, printers, packagings, customAddons]);
+
   // Métricas rápidas
   const totalWeight = products.reduce((acc, p) => {
-    const res = calculatePricing(p, settings, filaments, printers);
-    return acc + res.totalGrams;
+    const res = pricingMap.get(p.id);
+    return acc + (res?.totalGrams || 0);
   }, 0);
 
   const avgCost = products.length > 0
-    ? products.reduce((acc, p) => acc + calculatePricing(p, settings, filaments, printers).totalCost, 0) / products.length
+    ? products.reduce((acc, p) => acc + (pricingMap.get(p.id)?.totalCost || 0), 0) / products.length
     : 0;
 
   return (
@@ -246,7 +262,7 @@ export const ProductList: React.FC<ProductListProps> = ({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredProducts.map(product => {
-            const pricing = calculatePricing(product, settings, filaments, printers);
+            const pricing = pricingMap.get(product.id) || calculatePricing(product, settings, filaments, printers, packagings, customAddons);
             const numMargin = Number(selectedMargin);
             const marginRow = pricing.margins.find(m => Math.abs(m.marginPercent - numMargin) < 0.005)
               || pricing.margins.find(m => Math.abs(m.marginPercent - 1.0) < 0.005)

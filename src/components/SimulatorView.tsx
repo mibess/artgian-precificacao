@@ -3,7 +3,9 @@ import {
   ProductItem, 
   GlobalSettings, 
   Filament, 
-  Printer 
+  Printer,
+  PackagingItem,
+  CustomPackagingAddon
 } from "../types/pricing";
 import { calculatePricing, simulateCustomSalePrice } from "../utils/calculator";
 import { 
@@ -24,13 +26,17 @@ interface SimulatorViewProps {
   settings: GlobalSettings;
   filaments: Filament[];
   printers: Printer[];
+  packagings?: PackagingItem[];
+  customAddons?: CustomPackagingAddon[];
 }
 
 export const SimulatorView: React.FC<SimulatorViewProps> = ({
   products,
   settings,
   filaments,
-  printers
+  printers,
+  packagings = [],
+  customAddons = []
 }) => {
   const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id || "");
   const [targetSalePrice, setTargetSalePrice] = useState<string>("45.00");
@@ -41,7 +47,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const selectedProduct = products.find(p => p.id === selectedProductId) || products[0];
 
   const pricing = selectedProduct
-    ? calculatePricing(selectedProduct, settings, filaments, printers)
+    ? calculatePricing(selectedProduct, settings, filaments, printers, packagings, customAddons)
     : null;
 
   const baseCost = pricing
@@ -233,7 +239,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                     R$ {simDirect.netProfit.toFixed(2)}
                   </span>
                   <span className="text-xs font-bold text-emerald-700 mt-1 inline-block">
-                    Margem: {simDirect.marginPercent.toFixed(1)}% sobre custo
+                    Markup: {simDirect.markupPercent.toFixed(1)}% sobre custo
                   </span>
                 </div>
 
@@ -251,8 +257,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                     <span className="font-semibold text-slate-600">-R$ {baseCost.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between pt-1 border-t border-slate-100 font-bold">
-                    <span>Margem Operacional (ROI):</span>
-                    <span>{simDirect.roi.toFixed(1)}%</span>
+                    <span>Margem sobre a Venda:</span>
+                    <span className="text-emerald-700">{simDirect.marginPercent.toFixed(1)}%</span>
                   </div>
                 </div>
               </div>
@@ -274,7 +280,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                     R$ {simShopee.netProfit.toFixed(2)}
                   </span>
                   <span className="text-xs font-bold text-orange-700 mt-1 inline-block">
-                    Margem: {simShopee.marginPercent.toFixed(1)}% sobre custo
+                    Markup: {simShopee.markupPercent.toFixed(1)}% sobre custo
                   </span>
                 </div>
 
@@ -294,6 +300,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                   <div className="flex justify-between">
                     <span>Custo do Produto:</span>
                     <span className="font-semibold text-slate-600">-R$ {baseCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-slate-100 font-bold">
+                    <span>Margem sobre a Venda:</span>
+                    <span className="text-orange-700">{simShopee.marginPercent.toFixed(1)}%</span>
                   </div>
                 </div>
               </div>
@@ -315,7 +325,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                     R$ {simML.netProfit.toFixed(2)}
                   </span>
                   <span className="text-xs font-bold text-amber-700 mt-1 inline-block">
-                    Margem: {simML.marginPercent.toFixed(1)}% sobre custo
+                    Markup: {simML.markupPercent.toFixed(1)}% sobre custo
                   </span>
                 </div>
 
@@ -335,6 +345,10 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                   <div className="flex justify-between">
                     <span>Custo do Produto:</span>
                     <span className="font-semibold text-slate-600">-R$ {baseCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-slate-100 font-bold">
+                    <span>Margem sobre a Venda:</span>
+                    <span className="text-amber-700">{simML.marginPercent.toFixed(1)}%</span>
                   </div>
                 </div>
               </div>

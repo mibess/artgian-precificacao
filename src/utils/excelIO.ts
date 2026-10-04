@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
-import { ProductItem, GlobalSettings, Filament, Printer } from "../types/pricing";
-import { calculatePricing } from "./calculator";
+import { ProductItem, GlobalSettings, Filament, Printer, PackagingItem, CustomPackagingAddon } from "../types/pricing";
+import { calculatePricing, findMarginRow } from "./calculator";
 
 /**
  * Exporta catálogo completo e abas individuais de cada produto em formato Excel (.xlsx)
@@ -9,7 +9,9 @@ export function exportToExcel(
   products: ProductItem[],
   settings: GlobalSettings,
   filaments: Filament[],
-  printers: Printer[]
+  printers: Printer[],
+  packagings: PackagingItem[] = [],
+  customAddons: CustomPackagingAddon[] = []
 ) {
   const wb = XLSX.utils.book_new();
 
@@ -35,9 +37,9 @@ export function exportToExcel(
   ];
 
   for (const prod of products) {
-    const r = calculatePricing(prod, settings, filaments, printers);
-    const m50 = r.margins.find(m => m.marginPercent === 0.5);
-    const m100 = r.margins.find(m => m.marginPercent === 1.0);
+    const r = calculatePricing(prod, settings, filaments, printers, packagings, customAddons);
+    const m50 = findMarginRow(r, 0.5, settings, prod.quantityInBatch);
+    const m100 = findMarginRow(r, 1.0, settings, prod.quantityInBatch);
     const shopee50 = m50?.marketplacePrices["shopee"]?.salePrice ?? 0;
     const shopee100 = m100?.marketplacePrices["shopee"]?.salePrice ?? 0;
 
@@ -65,7 +67,7 @@ export function exportToExcel(
 
   // 2. Abas individuais por produto (compatível com a planilha original)
   for (const prod of products) {
-    const r = calculatePricing(prod, settings, filaments, printers);
+    const r = calculatePricing(prod, settings, filaments, printers, packagings, customAddons);
     const safeSheetName = prod.name.slice(0, 30).replace(/[:\\/?*\[\]]/g, "-").toUpperCase();
 
     const sheetData: any[] = [
@@ -107,21 +109,21 @@ export function exportToExcel(
       sheetData.push(["CUSTO UNITÁRIO", r.unitCost]);
     }
     sheetData.push([]);
-    sheetData.push(["Margem de Lucro", "Valor de Venda", "Lucro (R$)"]);
+    sheetData.push(["Markup / Margem", "Valor de Venda", "Lucro (R$)"]);
 
     for (const m of r.margins) {
-      sheetData.push([m.marginPercent, m.directSalePrice, m.directProfit]);
+      sheetData.push([m.marginLabel, m.directSalePrice, m.directProfit]);
     }
 
     sheetData.push([]);
     sheetData.push(["VENDA DIRETA SHOPEE"]);
     sheetData.push(["Comissão 20% - Taxa Fixa R$ 4,00"]);
-    sheetData.push(["Margem de Lucro", "Valor de Venda", "Lucro Líquido (R$)"]);
+    sheetData.push(["Markup / Margem", "Valor de Venda", "Lucro Líquido (R$)"]);
 
     for (const m of r.margins) {
       const shopee = m.marketplacePrices["shopee"];
       if (shopee) {
-        sheetData.push([m.marginPercent, shopee.salePrice, shopee.netProfit]);
+        sheetData.push([m.marginLabel, shopee.salePrice, shopee.netProfit]);
       }
     }
 

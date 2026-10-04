@@ -460,7 +460,7 @@ export function App() {
   };
 
   const handleExportExcel = () => {
-    exportToExcel(products, settings, filaments, printers);
+    exportToExcel(products, settings, filaments, printers, packagings, customAddons);
     showToast("Catálogo Excel exportado com sucesso!", "success");
   };
 
@@ -491,6 +491,8 @@ export function App() {
             settings={settings}
             filaments={filaments}
             printers={printers}
+            packagings={packagings}
+            customAddons={customAddons}
             onEditProduct={handleEditProduct}
             onDuplicateProduct={handleDuplicateProduct}
             onDeleteProduct={handleDeleteProduct}
@@ -526,6 +528,8 @@ export function App() {
             settings={settings}
             filaments={filaments}
             printers={printers}
+            packagings={packagings}
+            customAddons={customAddons}
           />
         )}
 
@@ -553,6 +557,8 @@ export function App() {
           settings={settings}
           filaments={filaments}
           printers={printers}
+          packagings={packagings}
+          customAddons={customAddons}
           initialMargin={quoteMargin}
           onClose={() => setQuoteProduct(null)}
         />

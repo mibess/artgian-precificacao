@@ -1355,7 +1355,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                   <div className="flex justify-between pt-1 border-t border-slate-100">
                     <span className="font-bold text-slate-800">Seu Lucro Líquido:</span>
                     <span className={"font-black " + (activeSim.netProfit >= 0 ? "text-emerald-600" : "text-rose-600")}>
-                      R$ {activeSim.netProfit.toFixed(2)} ({activeSim.marginPercent.toFixed(1)}% sobre custo)
+                      R$ {activeSim.netProfit.toFixed(2)} ({activeSim.markupPercent.toFixed(1)}% sobre custo • {activeSim.marginPercent.toFixed(1)}% margem)
                     </span>
                   </div>
 
@@ -1364,11 +1364,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                     <span className="text-slate-400 font-medium">Comparativo pelo mesmo preço:</span>
                     {simChannel === "direct" ? (
                       <span className="text-orange-700 font-semibold">
-                        Na Shopee: R$ {customShopeeSim.netProfit.toFixed(2)} ({customShopeeSim.marginPercent.toFixed(1)}%)
+                        Na Shopee: R$ {customShopeeSim.netProfit.toFixed(2)} ({customShopeeSim.markupPercent.toFixed(1)}% markup)
                       </span>
                     ) : (
                       <span className="text-emerald-700 font-semibold">
-                        Na Venda Direta: R$ {customDirectSim.netProfit.toFixed(2)} ({customDirectSim.marginPercent.toFixed(1)}%)
+                        Na Venda Direta: R$ {customDirectSim.netProfit.toFixed(2)} ({customDirectSim.markupPercent.toFixed(1)}% markup)
                       </span>
                     )}
                   </div>
