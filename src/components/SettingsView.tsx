@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { 
+  ProductItem,
+  ProductPart,
   GlobalSettings, 
   Filament, 
   Printer, 
@@ -31,6 +33,7 @@ import {
 } from "lucide-react";
 
 interface SettingsViewProps {
+  products?: ProductItem[];
   settings: GlobalSettings;
   filaments: Filament[];
   printers: Printer[];
@@ -44,6 +47,7 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
+  products = [],
   settings,
   filaments,
   printers,
@@ -62,6 +66,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [localCustomAddons, setLocalCustomAddons] = useState<CustomPackagingAddon[]>([...customAddons]);
   const [packagingActiveTab, setPackagingActiveTab] = useState<"boxes" | "addons">("boxes");
   const [savedFeedback, setSavedFeedback] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
   const [standardBubble, setStandardBubble] = useState<number>(() => {
     return packagings[0]?.bubbleWrapPrice ?? 0.70;
@@ -78,20 +83,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [expandedPackagingId, setExpandedPackagingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (packagings && packagings.length > 0) {
+    if (!isDirty && packagings && packagings.length > 0) {
       setLocalPackagings([...packagings]);
       if (typeof packagings[0].bubbleWrapPrice === "number") setStandardBubble(packagings[0].bubbleWrapPrice);
       if (typeof packagings[0].stickerPrice === "number") setStandardSticker(packagings[0].stickerPrice);
       if (typeof packagings[0].tissuePaperPrice === "number") setStandardTissue(packagings[0].tissuePaperPrice);
       if (typeof packagings[0].thankYouCardPrice === "number") setStandardCard(packagings[0].thankYouCardPrice);
     }
-  }, [packagings]);
+  }, [packagings, isDirty]);
 
   useEffect(() => {
-    if (customAddons) {
+    if (!isDirty && customAddons) {
       setLocalCustomAddons([...customAddons]);
     }
-  }, [customAddons]);
+  }, [customAddons, isDirty]);
 
   // Manipular Filamentos
   const addFilament = () => {
@@ -110,10 +115,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const next = [...localFilaments];
     next[index] = { ...next[index], [field]: val };
     setLocalFilaments(next);
+    setIsDirty(true);
   };
 
   const removeFilament = (id: string) => {
+    const inUse = products.filter(p => p.parts.some((pt: ProductPart) => pt.filamentId === id));
+    if (inUse.length > 0) {
+      const names = inUse.slice(0, 3).map(p => p.name).join(", ");
+      const extra = inUse.length > 3 ? ` e mais ${inUse.length - 3}` : "";
+      if (!window.confirm(`Este filamento está sendo usado em ${inUse.length} produto(s) (${names}${extra}). Se você excluí-lo, eles passarão a calcular com o valor padrão. Deseja realmente remover?`)) {
+        return;
+      }
+    }
     setLocalFilaments(localFilaments.filter(f => f.id !== id));
+    setIsDirty(true);
   };
 
   // Manipular Impressoras
@@ -125,16 +140,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       notes: "Consumo médio de trabalho"
     };
     setLocalPrinters([...localPrinters, newP]);
+    setIsDirty(true);
   };
 
   const updatePrinter = (index: number, field: keyof Printer, val: any) => {
     const next = [...localPrinters];
     next[index] = { ...next[index], [field]: val };
     setLocalPrinters(next);
+    setIsDirty(true);
   };
 
   const removePrinter = (id: string) => {
+    const inUse = products.filter(p => p.parts.some((pt: ProductPart) => pt.printerId === id));
+    if (inUse.length > 0) {
+      const names = inUse.slice(0, 3).map(p => p.name).join(", ");
+      const extra = inUse.length > 3 ? ` e mais ${inUse.length - 3}` : "";
+      if (!window.confirm(`Esta impressora está sendo usada em ${inUse.length} produto(s) (${names}${extra}). Se você excluí-la, eles calcularão com a potência padrão. Deseja realmente remover?`)) {
+        return;
+      }
+    }
     setLocalPrinters(localPrinters.filter(p => p.id !== id));
+    setIsDirty(true);
   };
 
   // Manipular Embalagens
@@ -154,12 +180,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       otherDescription: ""
     };
     setLocalPackagings([...localPackagings, newPkg]);
+    setIsDirty(true);
   };
 
   const updatePackaging = (index: number, field: keyof PackagingItem, val: any) => {
     const next = [...localPackagings];
     next[index] = { ...next[index], [field]: val };
     setLocalPackagings(next);
+    setIsDirty(true);
   };
 
   const duplicatePackaging = (pkg: PackagingItem) => {
@@ -169,10 +197,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       name: `${pkg.name} (Cópia)`
     };
     setLocalPackagings([...localPackagings, duplicated]);
+    setIsDirty(true);
   };
 
   const removePackaging = (id: string) => {
+    const inUse = products.filter(p => p.packagingId === id);
+    if (inUse.length > 0) {
+      const names = inUse.slice(0, 3).map(p => p.name).join(", ");
+      const extra = inUse.length > 3 ? ` e mais ${inUse.length - 3}` : "";
+      if (!window.confirm(`Esta embalagem está selecionada em ${inUse.length} produto(s) (${names}${extra}). Se você excluí-la, o vínculo com a caixa será removido. Deseja realmente remover?`)) {
+        return;
+      }
+    }
     setLocalPackagings(localPackagings.filter(p => p.id !== id));
+    setIsDirty(true);
   };
 
   // Manipular Itens Personalizados Gravados (Addons)
@@ -234,6 +272,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const handleSaveAll = () => {
+    setIsDirty(false);
     onSaveSettings(localSettings);
     onSaveFilaments(localFilaments);
     onSavePrinters(localPrinters);

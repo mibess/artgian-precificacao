@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ProductItem, GlobalSettings, Filament, Printer, PackagingItem, CustomPackagingAddon } from "./types/pricing";
 import { defaultProducts, defaultSettings, defaultFilaments, defaultPrinters, defaultPackagings, defaultCustomPackagingAddons } from "./data/defaultData";
 import { Navbar } from "./components/Navbar";
@@ -9,6 +9,7 @@ import { SimulatorView } from "./components/SimulatorView";
 import { QuoteModal } from "./components/QuoteModal";
 import { exportToExcel } from "./utils/excelIO";
 import { LoginScreen } from "./components/LoginScreen";
+import { ToastContainer, ToastMessage } from "./components/Toast";
 import {
   isSupabaseConfigured,
   getCurrentUser,
@@ -36,6 +37,20 @@ import {
 } from "./utils/routes";
 
 export function App() {
+  // Toasts
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const showToast = useCallback((message: string, type: ToastMessage["type"] = "success", title?: string) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    setToasts(prev => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   // Estado persistido no LocalStorage (Offline-first)
   const [products, setProducts] = useState<ProductItem[]>(() => {
     const saved = localStorage.getItem("3dprice_products");
@@ -44,6 +59,10 @@ export function App() {
     }
     return defaultProducts;
   });
+  const productsRef = useRef<ProductItem[]>(products);
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
 
   const [settings, setSettings] = useState<GlobalSettings>(() => {
     const saved = localStorage.getItem("3dprice_settings");
@@ -74,12 +93,7 @@ export function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (
-          Array.isArray(parsed) &&
-          parsed.length > 0 &&
-          !parsed.some((p: any) => p.id === "pkg-caixa-p") &&
-          parsed.some((p: any) => typeof p.thankYouCardPrice === "number")
-        ) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
       } catch (e) { console.error(e); }
@@ -98,8 +112,11 @@ export function App() {
     return defaultCustomPackagingAddons;
   });
 
-  // Estado de sincronização com Supabase
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  // Contador de sincronizações ativas
+  const [syncOps, setSyncOps] = useState<number>(0);
+  const isSyncing = syncOps > 0;
+  const startSync = () => setSyncOps(n => n + 1);
+  const endSync = () => setSyncOps(n => Math.max(0, n - 1));
 
   // Navegação sincronizada com URL e Rotas
   const [activeTab, setActiveTab] = useState<TabType>(() => getTabFromPath(window.location.pathname));
@@ -154,6 +171,7 @@ export function App() {
   const handleLoginSuccess = (userEmail: string) => {
     localStorage.setItem("artgian_auth_user", userEmail);
     setIsAuthenticated(true);
+    showToast(`Bem-vindo, ${userEmail}!`, "success");
   };
 
   const handleLogout = async () => {
@@ -161,6 +179,7 @@ export function App() {
       await signOutFromCloud();
       localStorage.removeItem("artgian_auth_user");
       setIsAuthenticated(false);
+      showToast("Sessão encerrada com sucesso.", "info");
     }
   };
 
@@ -185,9 +204,8 @@ export function App() {
     }
   };
 
-  // Suporte a histórico do navegador (Voltar / Avançar) e normalização da raiz
+  // Suporte a histórico do navegador (Voltar / Avançar)
   useEffect(() => {
-    // Se acessar a raiz "/", normaliza a URL para "/catalogo"
     if (window.location.pathname === "/" || window.location.pathname === "") {
       window.history.replaceState({ tab: "catalog" }, "", "/catalogo");
     }
@@ -199,8 +217,8 @@ export function App() {
       if (tab === "editor") {
         const prodId = getProductIdFromSearch(window.location.search);
         if (prodId) {
-          const found = products.find(p => p.id === prodId);
-          if (found) setEditingProduct(found);
+          const found = productsRef.current.find(p => p.id === prodId);
+          setEditingProduct(found || null);
         } else {
           setEditingProduct(null);
         }
@@ -211,15 +229,15 @@ export function App() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [products]);
+  }, []);
 
-  // Carregamento inicial do Supabase
+  // Carregamento inicial do Supabase com Reconciliação Inteligente
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupabaseConfigured() || !isAuthenticated) return;
 
     let isMounted = true;
     async function loadCloudData() {
-      setIsSyncing(true);
+      startSync();
       try {
         const [cloudProds, cloudSettings, cloudFilaments, cloudPrinters, cloudPackagings, cloudCustomAddons] = await Promise.all([
           fetchProductsFromCloud(),
@@ -231,34 +249,60 @@ export function App() {
         ]);
 
         if (!isMounted) return;
-        if (cloudProds && cloudProds.length > 0) {
-          setProducts(cloudProds);
-          // Se tiver um ID de produto na URL, sincroniza o objeto do produto
-          const prodId = getProductIdFromSearch(window.location.search);
-          if (prodId) {
-            const found = cloudProds.find(p => p.id === prodId);
-            if (found) setEditingProduct(found);
-          }
+
+        // Reconciliar produtos por updatedAt
+        if (cloudProds) {
+          setProducts(prevLocal => {
+            const localMap = new Map(prevLocal.map(p => [p.id, p]));
+            const merged = [...cloudProds];
+
+            // Manter e subir produtos locais mais recentes ou não existentes na nuvem
+            for (const local of prevLocal) {
+              const cloudMatch = cloudProds.find(cp => cp.id === local.id);
+              if (!cloudMatch) {
+                merged.push(local);
+                saveProductToCloud(local).catch(console.error);
+              } else {
+                const localTime = new Date(local.updatedAt).getTime();
+                const cloudTime = new Date(cloudMatch.updatedAt).getTime();
+                if (localTime > cloudTime) {
+                  const idx = merged.findIndex(m => m.id === local.id);
+                  if (idx >= 0) merged[idx] = local;
+                  saveProductToCloud(local).catch(console.error);
+                }
+              }
+            }
+
+            const prodId = getProductIdFromSearch(window.location.search);
+            if (prodId) {
+              const found = merged.find(p => p.id === prodId);
+              if (found) setEditingProduct(found);
+            }
+
+            return merged;
+          });
         }
+
         if (cloudSettings) setSettings(cloudSettings);
         if (cloudFilaments && cloudFilaments.length > 0) setFilaments(cloudFilaments);
         if (cloudPrinters && cloudPrinters.length > 0) setPrinters(cloudPrinters);
         if (cloudPackagings && cloudPackagings.length > 0) setPackagings(cloudPackagings);
         if (cloudCustomAddons && cloudCustomAddons.length > 0) setCustomAddons(cloudCustomAddons);
       } catch (err) {
-        console.warn("[App] Erro na sincronização inicial com nuvem:", err);
+        console.warn("[App] Erro na sincronização com a nuvem:", err);
       } finally {
-        if (isMounted) setIsSyncing(false);
+        if (isMounted) endSync();
       }
     }
 
     loadCloudData();
     return () => { isMounted = false; };
-  }, []);
+  }, [isAuthenticated]);
 
-  // Sincronizar com LocalStorage para cache instantâneo
+  // Sincronizar com LocalStorage
   useEffect(() => {
     localStorage.setItem("3dprice_products", JSON.stringify(products));
+    localStorage.setItem("3dprice_schema_version", "2");
   }, [products]);
 
   useEffect(() => {
@@ -281,7 +325,7 @@ export function App() {
     localStorage.setItem("3dprice_packaging_addons", JSON.stringify(customAddons));
   }, [customAddons]);
 
-  // Ações de Produtos com sincronização em nuvem
+  // Ações de Produtos
   const handleSaveProduct = async (savedProduct: ProductItem) => {
     setProducts(prev => {
       const idx = prev.findIndex(p => p.id === savedProduct.id);
@@ -295,16 +339,24 @@ export function App() {
     navigateToTab("catalog");
 
     if (isSupabaseConfigured()) {
-      setIsSyncing(true);
-      await saveProductToCloud(savedProduct);
-      setIsSyncing(false);
+      startSync();
+      const ok = await saveProductToCloud(savedProduct);
+      endSync();
+      if (ok) {
+        showToast(`Produto "${savedProduct.name}" salvo com sucesso!`, "success");
+      } else {
+        showToast(`Produto salvo localmente, mas houve falha ao sincronizar com a nuvem.`, "warning");
+      }
+    } else {
+      showToast(`Produto "${savedProduct.name}" salvo localmente.`, "success");
     }
   };
 
   const handleDuplicateProduct = async (prod: ProductItem) => {
+    const newId = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const duplicated: ProductItem = {
       ...prod,
-      id: `prod-${Date.now()}`,
+      id: newId,
       name: `${prod.name} (Cópia)`,
       parts: prod.parts.map(p => ({ ...p, id: `part-${Date.now()}-${Math.random().toString(36).substring(2, 6)}` })),
       createdAt: new Date().toISOString(),
@@ -313,19 +365,32 @@ export function App() {
     setProducts(prev => [duplicated, ...prev]);
 
     if (isSupabaseConfigured()) {
-      setIsSyncing(true);
-      await saveProductToCloud(duplicated);
-      setIsSyncing(false);
+      startSync();
+      const ok = await saveProductToCloud(duplicated);
+      endSync();
+      if (ok) {
+        showToast(`Cópia criada: "${duplicated.name}"`, "success");
+      }
     }
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    if (window.confirm("Deseja realmente excluir este produto?")) {
+    const prod = products.find(p => p.id === productId);
+    const prodName = prod?.name || "Produto";
+
+    if (window.confirm(`Deseja realmente excluir "${prodName}"?`)) {
       setProducts(prev => prev.filter(p => p.id !== productId));
       if (isSupabaseConfigured()) {
-        setIsSyncing(true);
-        await deleteProductFromCloud(productId);
-        setIsSyncing(false);
+        startSync();
+        const ok = await deleteProductFromCloud(productId);
+        endSync();
+        if (ok) {
+          showToast(`"${prodName}" excluído com sucesso.`, "info");
+        } else {
+          showToast(`Excluído localmente, mas erro ao apagar da nuvem.`, "warning");
+        }
+      } else {
+        showToast(`"${prodName}" excluído.`, "info");
       }
     }
   };
@@ -333,45 +398,56 @@ export function App() {
   const handleSaveSettings = async (newSettings: GlobalSettings) => {
     setSettings(newSettings);
     if (isSupabaseConfigured()) {
-      setIsSyncing(true);
-      await saveSettingsToCloud(newSettings);
-      setIsSyncing(false);
+      startSync();
+      const ok = await saveSettingsToCloud(newSettings);
+      endSync();
+      if (ok) {
+        showToast("Configurações salvas e sincronizadas na nuvem!", "success");
+      } else {
+        showToast("Configurações salvas localmente, mas falha ao sincronizar.", "warning");
+      }
+    } else {
+      showToast("Configurações salvas com sucesso!", "success");
     }
   };
 
   const handleSaveFilaments = async (newFilaments: Filament[]) => {
     setFilaments(newFilaments);
     if (isSupabaseConfigured()) {
-      setIsSyncing(true);
-      await saveAllFilamentsToCloud(newFilaments);
-      setIsSyncing(false);
+      startSync();
+      const ok = await saveAllFilamentsToCloud(newFilaments);
+      endSync();
+      if (!ok) showToast("Aviso: filamentos salvos localmente, erro na nuvem.", "warning");
     }
   };
 
   const handleSavePrinters = async (newPrinters: Printer[]) => {
     setPrinters(newPrinters);
     if (isSupabaseConfigured()) {
-      setIsSyncing(true);
-      await saveAllPrintersToCloud(newPrinters);
-      setIsSyncing(false);
+      startSync();
+      const ok = await saveAllPrintersToCloud(newPrinters);
+      endSync();
+      if (!ok) showToast("Aviso: impressoras salvas localmente, erro na nuvem.", "warning");
     }
   };
 
   const handleSavePackagings = async (newPackagings: PackagingItem[]) => {
     setPackagings(newPackagings);
     if (isSupabaseConfigured()) {
-      setIsSyncing(true);
-      await saveAllPackagingsToCloud(newPackagings);
-      setIsSyncing(false);
+      startSync();
+      const ok = await saveAllPackagingsToCloud(newPackagings);
+      endSync();
+      if (!ok) showToast("Aviso: embalagens salvas localmente, erro na nuvem.", "warning");
     }
   };
 
   const handleSaveCustomAddons = async (newAddons: CustomPackagingAddon[]) => {
     setCustomAddons(newAddons);
     if (isSupabaseConfigured()) {
-      setIsSyncing(true);
-      await saveAllCustomAddonsToCloud(newAddons);
-      setIsSyncing(false);
+      startSync();
+      const ok = await saveAllCustomAddonsToCloud(newAddons);
+      endSync();
+      if (!ok) showToast("Aviso: personalizados salvos localmente, erro na nuvem.", "warning");
     }
   };
 
@@ -385,6 +461,7 @@ export function App() {
 
   const handleExportExcel = () => {
     exportToExcel(products, settings, filaments, printers);
+    showToast("Catálogo Excel exportado com sucesso!", "success");
   };
 
   // Se não estiver autenticado, exige login
@@ -429,6 +506,7 @@ export function App() {
 
         {activeTab === "editor" && (
           <ProductEditor
+            key={editingProduct?.id || "new-product"}
             product={editingProduct}
             settings={settings}
             filaments={filaments}
@@ -453,6 +531,7 @@ export function App() {
 
         {activeTab === "settings" && (
           <SettingsView
+            products={products}
             settings={settings}
             filaments={filaments}
             printers={printers}
@@ -478,6 +557,9 @@ export function App() {
           onClose={() => setQuoteProduct(null)}
         />
       )}
+
+      {/* Notificações Toast */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 }
