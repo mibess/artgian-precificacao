@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ImagePlus, Loader2, X } from "lucide-react";
 import { ProductImage, MAX_PRODUCT_IMAGES } from "../types/pricing";
 import { productImageUrl, uploadProductImage } from "../services/productImages";
@@ -19,9 +19,7 @@ export const ProductImagesField: React.FC<ProductImagesFieldProps> = ({ productI
   // Vagas já consideram os envios em andamento, para nunca passar do limite.
   const freeSlots = MAX_PRODUCT_IMAGES - images.length - uploading;
 
-  const handleFiles = async (fileList: FileList | null) => {
-    const files = Array.from(fileList || []);
-    if (inputRef.current) inputRef.current.value = "";
+  const handleFiles = async (files: File[]) => {
     if (files.length === 0) return;
 
     setError(null);
@@ -47,8 +45,27 @@ export const ProductImagesField: React.FC<ProductImagesFieldProps> = ({ productI
     if (uploaded.length > 0) onChange([...images, ...uploaded].slice(0, MAX_PRODUCT_IMAGES));
   };
 
+  // Colar (Ctrl/Cmd+V) com o mouse sobre o campo envia a imagem da área de transferência.
+  // Só age quando há imagem no clipboard; colar texto em outros campos segue normal.
+  const [hovering, setHovering] = useState(false);
+  useEffect(() => {
+    if (!hovering) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.files || []).filter(f => f.type.startsWith("image/"));
+      if (files.length === 0) return;
+      e.preventDefault();
+      void handleFiles(files);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
+
   return (
-    <div className="pt-2">
+    <div
+      className="pt-2"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+    >
       <label className="block text-xs font-semibold text-slate-700 mb-1">
         Fotos do Produto <span className="font-normal text-slate-400">({images.length}/{MAX_PRODUCT_IMAGES})</span>
       </label>
@@ -97,11 +114,15 @@ export const ProductImagesField: React.FC<ProductImagesFieldProps> = ({ productI
         accept="image/jpeg,image/png,image/webp"
         multiple
         className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          void handleFiles(files);
+        }}
       />
 
       {error && <p className="mt-1.5 text-[11px] text-red-600">{error}</p>}
-      <p className="mt-1.5 text-[11px] text-slate-400">JPG, PNG ou WebP. As fotos são otimizadas automaticamente e salvas ao salvar o produto.</p>
+      <p className="mt-1.5 text-[11px] text-slate-400">JPG, PNG ou WebP. Passe o mouse aqui e cole (Ctrl/⌘+V) para enviar uma imagem copiada. As fotos são otimizadas automaticamente e salvas ao salvar o produto.</p>
     </div>
   );
 };
