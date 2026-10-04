@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { formatBRL, formatNumber } from "../utils/calculator";
 import { 
   ProductItem,
   ProductPart,
@@ -40,11 +41,13 @@ interface SettingsViewProps {
   printers: Printer[];
   packagings?: PackagingItem[];
   customAddons?: CustomPackagingAddon[];
-  onSaveSettings: (settings: GlobalSettings) => void;
-  onSaveFilaments: (filaments: Filament[]) => void;
-  onSavePrinters: (printers: Printer[]) => void;
-  onSavePackagings?: (packagings: PackagingItem[]) => void;
-  onSaveCustomAddons?: (customAddons: CustomPackagingAddon[]) => void;
+  onSaveSettings: (settings: GlobalSettings) => Promise<boolean> | void;
+  onSaveFilaments: (filaments: Filament[]) => Promise<boolean> | void;
+  onSavePrinters: (printers: Printer[]) => Promise<boolean> | void;
+  onSavePackagings?: (packagings: PackagingItem[]) => Promise<boolean> | void;
+  onSaveCustomAddons?: (customAddons: CustomPackagingAddon[]) => Promise<boolean> | void;
+  /** Informa ao App se há alterações não salvas (para avisar antes de sair da tela). */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -58,7 +61,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSaveFilaments,
   onSavePrinters,
   onSavePackagings,
-  onSaveCustomAddons
+  onSaveCustomAddons,
+  onDirtyChange
 }) => {
   const [localSettings, setLocalSettings] = useState<GlobalSettings>({ ...settings });
   const [localFilaments, setLocalFilaments] = useState<Filament[]>([...filaments]);
@@ -66,8 +70,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [localPackagings, setLocalPackagings] = useState<PackagingItem[]>([...packagings]);
   const [localCustomAddons, setLocalCustomAddons] = useState<CustomPackagingAddon[]>([...customAddons]);
   const [packagingActiveTab, setPackagingActiveTab] = useState<"boxes" | "addons">("boxes");
-  const [savedFeedback, setSavedFeedback] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // Alterações não salvas: compara o estado local com o que veio da nuvem (desfazer uma edição limpa o aviso)
+  const isDirty = useMemo(() => (
+    JSON.stringify(localSettings) !== JSON.stringify(settings) ||
+    JSON.stringify(localFilaments) !== JSON.stringify(filaments) ||
+    JSON.stringify(localPrinters) !== JSON.stringify(printers) ||
+    JSON.stringify(localPackagings) !== JSON.stringify(packagings) ||
+    JSON.stringify(localCustomAddons) !== JSON.stringify(customAddons)
+  ), [localSettings, localFilaments, localPrinters, localPackagings, localCustomAddons, settings, filaments, printers, packagings, customAddons]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const [standardBubble, setStandardBubble] = useState<number>(() => {
     return packagings[0]?.bubbleWrapPrice ?? 0.70;
@@ -82,22 +100,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return packagings[0]?.thankYouCardPrice ?? 0.50;
   });
   const [expandedPackagingId, setExpandedPackagingId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isDirty && packagings && packagings.length > 0) {
-      setLocalPackagings([...packagings]);
-      if (typeof packagings[0].bubbleWrapPrice === "number") setStandardBubble(packagings[0].bubbleWrapPrice);
-      if (typeof packagings[0].stickerPrice === "number") setStandardSticker(packagings[0].stickerPrice);
-      if (typeof packagings[0].tissuePaperPrice === "number") setStandardTissue(packagings[0].tissuePaperPrice);
-      if (typeof packagings[0].thankYouCardPrice === "number") setStandardCard(packagings[0].thankYouCardPrice);
-    }
-  }, [packagings, isDirty]);
-
-  useEffect(() => {
-    if (!isDirty && customAddons) {
-      setLocalCustomAddons([...customAddons]);
-    }
-  }, [customAddons, isDirty]);
 
   // Manipular Filamentos
   const addFilament = () => {
@@ -116,7 +118,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const next = [...localFilaments];
     next[index] = { ...next[index], [field]: val };
     setLocalFilaments(next);
-    setIsDirty(true);
   };
 
   const removeFilament = (id: string) => {
@@ -129,7 +130,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     }
     setLocalFilaments(localFilaments.filter(f => f.id !== id));
-    setIsDirty(true);
   };
 
   // Manipular Impressoras
@@ -141,14 +141,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       notes: "Consumo médio de trabalho"
     };
     setLocalPrinters([...localPrinters, newP]);
-    setIsDirty(true);
   };
 
   const updatePrinter = (index: number, field: keyof Printer, val: any) => {
     const next = [...localPrinters];
     next[index] = { ...next[index], [field]: val };
     setLocalPrinters(next);
-    setIsDirty(true);
   };
 
   const removePrinter = (id: string) => {
@@ -161,7 +159,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     }
     setLocalPrinters(localPrinters.filter(p => p.id !== id));
-    setIsDirty(true);
   };
 
   // Manipular Embalagens
@@ -181,14 +178,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       otherDescription: ""
     };
     setLocalPackagings([...localPackagings, newPkg]);
-    setIsDirty(true);
   };
 
   const updatePackaging = (index: number, field: keyof PackagingItem, val: any) => {
     const next = [...localPackagings];
     next[index] = { ...next[index], [field]: val };
     setLocalPackagings(next);
-    setIsDirty(true);
   };
 
   const duplicatePackaging = (pkg: PackagingItem) => {
@@ -198,7 +193,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       name: `${pkg.name} (Cópia)`
     };
     setLocalPackagings([...localPackagings, duplicated]);
-    setIsDirty(true);
   };
 
   const removePackaging = (id: string) => {
@@ -211,7 +205,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     }
     setLocalPackagings(localPackagings.filter(p => p.id !== id));
-    setIsDirty(true);
   };
 
   // Manipular Itens Personalizados Gravados (Addons)
@@ -250,7 +243,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       thankYouCardPrice: card
     }));
     setLocalPackagings(next);
-    alert(`Insumos de proteção (Bolha R$ ${bubble.toFixed(2)}, Adesivo R$ ${sticker.toFixed(2)}, Seda R$ ${tissue.toFixed(2)} e Cartão R$ ${card.toFixed(2)}) aplicados em todas as ${next.length} caixas com sucesso!`);
+    alert(`Insumos de proteção (Bolha ${formatBRL(bubble)}, Adesivo ${formatBRL(sticker)}, Seda ${formatBRL(tissue)} e Cartão ${formatBRL(card)}) aplicados em todas as ${next.length} caixas. Clique em "Salvar Alterações" para gravar na nuvem.`);
   };
 
   const togglePackagingAddon = (pkgIndex: number, addonId: string) => {
@@ -272,23 +265,60 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setLocalSettings({ ...localSettings, marketplaces: nextMps });
   };
 
-  const handleSaveAll = () => {
-    setIsDirty(false);
-    onSaveSettings(localSettings);
-    onSaveFilaments(localFilaments);
-    onSavePrinters(localPrinters);
-    if (onSavePackagings) {
-      onSavePackagings(localPackagings);
-    }
-    if (onSaveCustomAddons) {
-      onSaveCustomAddons(localCustomAddons);
-    }
-    setSavedFeedback(true);
-    setTimeout(() => setSavedFeedback(false), 3000);
+  const handleSaveAll = async () => {
+    if (saveState === "saving") return;
+    setSaveState("saving");
+    const results = await Promise.all([
+      onSaveSettings(localSettings),
+      onSaveFilaments(localFilaments),
+      onSavePrinters(localPrinters),
+      onSavePackagings?.(localPackagings),
+      onSaveCustomAddons?.(localCustomAddons)
+    ]);
+    // Handlers sem retorno (void) contam como sucesso
+    const ok = results.every(r => r !== false);
+    setSaveState(ok ? "saved" : "error");
+    setTimeout(() => setSaveState(current => (current === "saving" ? current : "idle")), 3000);
   };
 
+  const discardChanges = () => {
+    if (!window.confirm("Descartar todas as alterações não salvas desta tela?")) return;
+    setLocalSettings({ ...settings });
+    setLocalFilaments([...filaments]);
+    setLocalPrinters([...printers]);
+    setLocalPackagings([...packagings]);
+    setLocalCustomAddons([...customAddons]);
+  };
+
+  const saveButton = (
+    <button
+      type="button"
+      onClick={handleSaveAll}
+      disabled={saveState === "saving"}
+      aria-busy={saveState === "saving"}
+      className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white shadow-sm rounded-lg transition-all ${
+        saveState === "error" ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700"
+      }`}
+    >
+      {saveState === "saving" ? (
+        <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" aria-hidden="true" />
+      ) : saveState === "saved" ? (
+        <Check className="w-4 h-4 text-emerald-300" aria-hidden="true" />
+      ) : (
+        <Save className="w-4 h-4" aria-hidden="true" />
+      )}
+      {saveState === "saving"
+        ? "Salvando..."
+        : saveState === "saved"
+        ? "Salvo com Sucesso!"
+        : saveState === "error"
+        ? "Falha ao salvar - tentar de novo"
+        : "Salvar Alterações"}
+    </button>
+  );
+
   return (
-    <div className="w-full space-y-6 pb-16">
+    <div className="w-full space-y-6 pb-24">
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -297,19 +327,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Configuração de Insumos & Parâmetros Globais
           </h2>
           <p className="text-xs text-slate-500">
-            Altere os custos de energia, preço dos filamentos e taxas de comissão da Shopee e outros canais.
+            Altere os custos de energia, preço dos filamentos e as taxas de comissão dos canais de venda.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSaveAll}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm rounded-lg transition-all"
-          >
-            {savedFeedback ? <Check className="w-4 h-4 text-emerald-300" /> : <Save className="w-4 h-4" />}
-            {savedFeedback ? "Salvo com Sucesso!" : "Salvar Alterações"}
-          </button>
+          {isDirty && saveState !== "saving" && (
+            <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+              Alterações não salvas
+            </span>
+          )}
+          {saveButton}
         </div>
       </div>
 
@@ -355,7 +383,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="w-full pl-9 pr-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Equivale a R$ {(localSettings.defaultFilamentPricePerKg / 1000).toFixed(3)} por grama</p>
+              <p className="text-[10px] text-slate-400 mt-1">Equivale a R$ {formatNumber(localSettings.defaultFilamentPricePerKg / 1000, 3, 3)} por grama</p>
             </div>
 
             <div>
@@ -373,7 +401,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">W</span>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Valor na planilha: 95 W (custo de R$ {((localSettings.defaultPrinterWatts / 1000) * localSettings.energyKwhPrice).toFixed(4)}/hora)</p>
+              <p className="text-[10px] text-slate-400 mt-1">Custo de energia nessa potência: R$ {formatNumber((localSettings.defaultPrinterWatts / 1000) * localSettings.energyKwhPrice, 4, 4)}/hora</p>
             </div>
 
             <div>
@@ -550,7 +578,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="p-3 bg-amber-50 border border-amber-200/70 rounded-lg text-[11px] text-amber-800 flex gap-2">
             <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
             <span>
-              A Shopee cobra <b>20% de comissão + R$ 4,00 por item</b> vendido. O sistema recalcula o preço final para que você receba exatamente o mesmo lucro líquido da venda direta.
+              Cada canal ativo cobra sua <b>comissão percentual + taxa fixa por item</b> (com teto e faixa mínima opcionais). O sistema recalcula o preço final para que você receba exatamente o mesmo lucro líquido da venda direta.
             </span>
           </div>
 
@@ -626,17 +654,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <td className="py-2 px-3">
                     <div className="flex items-center gap-1 font-bold text-slate-800">
                       <span>R$</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         step="1"
+                        min={0}
+                        aria-label={`Preço por kg de ${fil.name}`}
                         value={fil.pricePerKg}
-                        onChange={(e) => updateFilament(idx, "pricePerKg", parseFloat(e.target.value) || 0)}
+                        onChange={(val) => updateFilament(idx, "pricePerKg", val)}
                         className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
                       />
                     </div>
                   </td>
                   <td className="py-2 px-3 text-slate-500 font-mono">
-                    R$ {(fil.pricePerKg / 1000).toFixed(3)}
+                    R$ {formatNumber(fil.pricePerKg / 1000, 3, 3)}
                   </td>
                   <td className="py-2 px-3 text-right">
                     <button
@@ -699,18 +728,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </td>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-1 font-bold text-slate-800">
-                        <input
-                          type="number"
+                        <NumberInput
+                          allowDecimals={false}
                           step="5"
+                          min={0}
+                          aria-label={`Potência em watts de ${prn.name}`}
                           value={prn.powerWatts}
-                          onChange={(e) => updatePrinter(idx, "powerWatts", parseInt(e.target.value, 10) || 0)}
+                          onChange={(val) => updatePrinter(idx, "powerWatts", Math.round(val))}
                           className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold"
                         />
                         <span>W</span>
                       </div>
                     </td>
                     <td className="py-2 px-3 text-indigo-600 font-bold font-mono">
-                      R$ {costPerHour.toFixed(4)}/h
+                      R$ {formatNumber(costPerHour, 4, 4)}/h
                     </td>
                     <td className="py-2 px-3">
                       <input
@@ -813,7 +844,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span>Insumos Fixos de Proteção & Envio (Inclusos em Todas as Caixas)</span>
                   </h4>
                   <p className="text-[11px] text-slate-500">
-                    Custos padrão de proteção que acompanham cada envio (Subtotal fixo: <b className="text-amber-900">R$ {(standardBubble + standardSticker + standardTissue + standardCard).toFixed(2)}</b>).
+                    Custos padrão de proteção que acompanham cada envio (Subtotal fixo: <b className="text-amber-900">{formatBRL(standardBubble + standardSticker + standardTissue + standardCard)}</b>).
                   </p>
                 </div>
                 <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
@@ -840,12 +871,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span className="text-[10px] text-slate-500 font-bold block">🫧 Plástico Bolha</span>
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-slate-400 font-bold">R$</span>
-                    <input
-                      type="number"
+                    <NumberInput
                       step="0.05"
-                      min="0"
+                      min={0}
                       value={standardBubble}
-                      onChange={(e) => setStandardBubble(parseFloat(e.target.value) || 0)}
+                      onChange={(val) => setStandardBubble(val)}
                       className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:bg-white focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
@@ -855,12 +885,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span className="text-[10px] text-slate-500 font-bold block">🏷️ Adesivo Personalizado</span>
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-slate-400 font-bold">R$</span>
-                    <input
-                      type="number"
+                    <NumberInput
                       step="0.02"
-                      min="0"
+                      min={0}
                       value={standardSticker}
-                      onChange={(e) => setStandardSticker(parseFloat(e.target.value) || 0)}
+                      onChange={(val) => setStandardSticker(val)}
                       className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:bg-white focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
@@ -870,12 +899,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span className="text-[10px] text-slate-500 font-bold block">📜 Papel Seda 50x70</span>
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-slate-400 font-bold">R$</span>
-                    <input
-                      type="number"
+                    <NumberInput
                       step="0.01"
-                      min="0"
+                      min={0}
                       value={standardTissue}
-                      onChange={(e) => setStandardTissue(parseFloat(e.target.value) || 0)}
+                      onChange={(val) => setStandardTissue(val)}
                       className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:bg-white focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
@@ -885,12 +913,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span className="text-[10px] text-amber-900 font-extrabold block">💌 Cartão de Agradecimento</span>
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-amber-600 font-bold">R$</span>
-                    <input
-                      type="number"
+                    <NumberInput
                       step="0.05"
-                      min="0"
+                      min={0}
                       value={standardCard}
-                      onChange={(e) => setStandardCard(parseFloat(e.target.value) || 0)}
+                      onChange={(val) => setStandardCard(val)}
                       className="w-full text-xs font-bold text-amber-950 bg-white border border-amber-300 rounded px-1.5 py-0.5 focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
@@ -951,34 +978,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <td className="py-2.5 px-3">
                               <div className="inline-flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-700">
                                 <span className="text-[10px] text-slate-400 font-bold pl-0.5">L:</span>
-                                <input
-                                  type="number"
+                                <NumberInput
                                   step="0.5"
-                                  min="0"
+                                  min={0}
                                   value={pkg.width}
-                                  onChange={(e) => updatePackaging(idx, "width", parseFloat(e.target.value) || 0)}
+                                  onChange={(val) => updatePackaging(idx, "width", val)}
                                   className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
                                   title="Largura (cm)"
                                 />
                                 <span className="text-slate-300">×</span>
                                 <span className="text-[10px] text-slate-400 font-bold">A:</span>
-                                <input
-                                  type="number"
+                                <NumberInput
                                   step="0.5"
-                                  min="0"
+                                  min={0}
                                   value={pkg.height}
-                                  onChange={(e) => updatePackaging(idx, "height", parseFloat(e.target.value) || 0)}
+                                  onChange={(val) => updatePackaging(idx, "height", val)}
                                   className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
                                   title="Altura (cm)"
                                 />
                                 <span className="text-slate-300">×</span>
                                 <span className="text-[10px] text-slate-400 font-bold">C:</span>
-                                <input
-                                  type="number"
+                                <NumberInput
                                   step="0.5"
-                                  min="0"
+                                  min={0}
                                   value={pkg.length}
-                                  onChange={(e) => updatePackaging(idx, "length", parseFloat(e.target.value) || 0)}
+                                  onChange={(val) => updatePackaging(idx, "length", val)}
                                   className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
                                   title="Comprimento (cm)"
                                 />
@@ -990,12 +1014,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <td className="py-2.5 px-3">
                               <div className="flex items-center gap-1 font-bold text-slate-800">
                                 <span className="text-[10px] text-slate-400">R$</span>
-                                <input
-                                  type="number"
+                                <NumberInput
                                   step="0.05"
-                                  min="0"
+                                  min={0}
                                   value={pkg.boxPrice}
-                                  onChange={(e) => updatePackaging(idx, "boxPrice", parseFloat(e.target.value) || 0)}
+                                  onChange={(val) => updatePackaging(idx, "boxPrice", val)}
                                   className="w-16 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-bold focus:bg-white"
                                 />
                               </div>
@@ -1005,7 +1028,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <td className="py-2.5 px-3">
                               <div className="flex items-center gap-2">
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[11px]">
-                                  + R$ {protectionSum.toFixed(2)} fixos
+                                  + {formatBRL(protectionSum)} fixos
                                 </span>
                                 <button
                                   type="button"
@@ -1022,7 +1045,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             {/* Custo Total */}
                             <td className="py-2.5 px-3">
                               <div className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-extrabold font-mono text-xs border border-emerald-200 whitespace-nowrap shadow-2xs">
-                                R$ {total.toFixed(2)}
+                                {formatBRL(total)}
                               </div>
                             </td>
 
@@ -1082,12 +1105,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <span className="block text-[10px] text-slate-500 font-semibold mb-1">🫧 Plástico Bolha</span>
                                       <div className="flex items-center gap-1 font-bold text-slate-800">
                                         <span className="text-[10px] text-slate-400">R$</span>
-                                        <input
-                                          type="number"
+                                        <NumberInput
                                           step="0.05"
-                                          min="0"
+                                          min={0}
                                           value={pkg.bubbleWrapPrice}
-                                          onChange={(e) => updatePackaging(idx, "bubbleWrapPrice", parseFloat(e.target.value) || 0)}
+                                          onChange={(val) => updatePackaging(idx, "bubbleWrapPrice", val)}
                                           className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold"
                                         />
                                       </div>
@@ -1097,12 +1119,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <span className="block text-[10px] text-slate-500 font-semibold mb-1">🏷️ Adesivo</span>
                                       <div className="flex items-center gap-1 font-bold text-slate-800">
                                         <span className="text-[10px] text-slate-400">R$</span>
-                                        <input
-                                          type="number"
+                                        <NumberInput
                                           step="0.02"
-                                          min="0"
+                                          min={0}
                                           value={pkg.stickerPrice}
-                                          onChange={(e) => updatePackaging(idx, "stickerPrice", parseFloat(e.target.value) || 0)}
+                                          onChange={(val) => updatePackaging(idx, "stickerPrice", val)}
                                           className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold"
                                         />
                                       </div>
@@ -1112,12 +1133,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <span className="block text-[10px] text-slate-500 font-semibold mb-1">📜 Papel Seda</span>
                                       <div className="flex items-center gap-1 font-bold text-slate-800">
                                         <span className="text-[10px] text-slate-400">R$</span>
-                                        <input
-                                          type="number"
+                                        <NumberInput
                                           step="0.01"
-                                          min="0"
+                                          min={0}
                                           value={pkg.tissuePaperPrice}
-                                          onChange={(e) => updatePackaging(idx, "tissuePaperPrice", parseFloat(e.target.value) || 0)}
+                                          onChange={(val) => updatePackaging(idx, "tissuePaperPrice", val)}
                                           className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-bold"
                                         />
                                       </div>
@@ -1127,12 +1147,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <span className="block text-[10px] text-amber-900 font-bold mb-1">💌 Cartão Agradecimento</span>
                                       <div className="flex items-center gap-1 font-bold text-amber-950">
                                         <span className="text-[10px] text-amber-600">R$</span>
-                                        <input
-                                          type="number"
+                                        <NumberInput
                                           step="0.05"
-                                          min="0"
+                                          min={0}
                                           value={typeof pkg.thankYouCardPrice === "number" ? pkg.thankYouCardPrice : 0.50}
-                                          onChange={(e) => updatePackaging(idx, "thankYouCardPrice", parseFloat(e.target.value) || 0)}
+                                          onChange={(val) => updatePackaging(idx, "thankYouCardPrice", val)}
                                           className="w-full bg-white border border-amber-300 rounded px-1.5 py-0.5 text-xs font-bold text-amber-950"
                                         />
                                       </div>
@@ -1162,7 +1181,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                               <span>{isSelected ? "✓" : "+"}</span>
                                               <span>{addon.name}</span>
                                               <span className={isSelected ? "text-indigo-200" : "text-slate-400 font-normal"}>
-                                                (R$ {addon.price.toFixed(2)})
+                                                ({formatBRL(addon.price)})
                                               </span>
                                             </button>
                                           );
@@ -1185,13 +1204,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     />
                                     <div className="flex items-center gap-1 font-bold text-slate-800">
                                       <span className="text-xs text-slate-400">R$</span>
-                                      <input
-                                        type="number"
+                                      <NumberInput
                                         step="0.10"
-                                        min="0"
-                                        placeholder="0.00"
+                                        min={0}
+                                        placeholder="0,00"
                                         value={pkg.otherPrice}
-                                        onChange={(e) => updatePackaging(idx, "otherPrice", parseFloat(e.target.value) || 0)}
+                                        onChange={(val) => updatePackaging(idx, "otherPrice", val)}
                                         className="w-20 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:bg-white"
                                       />
                                     </div>
@@ -1225,7 +1243,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
 
               <div className="text-[11px] text-slate-400">
-                Insumos fixos padrão somam <b>R$ {(standardBubble + standardSticker + standardTissue + standardCard).toFixed(2)}</b> (Bolha R$ {standardBubble.toFixed(2)} + Adesivo R$ {standardSticker.toFixed(2)} + Seda R$ {standardTissue.toFixed(2)} + Cartão R$ {standardCard.toFixed(2)})
+                Insumos fixos padrão somam <b>{formatBRL(standardBubble + standardSticker + standardTissue + standardCard)}</b> (Bolha {formatBRL(standardBubble)} + Adesivo {formatBRL(standardSticker)} + Seda {formatBRL(standardTissue)} + Cartão {formatBRL(standardCard)})
               </div>
             </div>
           </div>
@@ -1270,12 +1288,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1 font-bold text-slate-800">
                           <span className="text-[10px] text-slate-400">R$</span>
-                          <input
-                            type="number"
+                          <NumberInput
                             step="0.05"
-                            min="0"
+                            min={0}
                             value={addon.price}
-                            onChange={(e) => updateCustomAddon(idx, "price", parseFloat(e.target.value) || 0)}
+                            onChange={(val) => updateCustomAddon(idx, "price", val)}
                             className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1 font-bold text-slate-900"
                           />
                         </div>
@@ -1329,6 +1346,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Barra fixa de alterações pendentes (a página é longa e o botão do topo some ao rolar) */}
+      {isDirty && (
+        <div className="no-print fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-40 animate-slide-up">
+          <div className="flex items-center justify-between sm:justify-center gap-3 px-4 py-2.5 bg-slate-900 text-white rounded-xl shadow-xl border border-slate-700">
+            <span className="text-xs font-semibold">Você tem alterações não salvas</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={discardChanges}
+                disabled={saveState === "saving"}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800 rounded-lg"
+              >
+                Descartar
+              </button>
+              {saveButton}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

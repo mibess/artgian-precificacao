@@ -1,5 +1,6 @@
 import React from "react";
-import { ProductItem, PricingBreakdown } from "../types/pricing";
+import { formatBRL, pickMarginRow } from "../utils/calculator";
+import { ProductItem, PricingBreakdown, MarketplaceConfig } from "../types/pricing";
 import logoArtgian from "../assets/logo-artgian.png";
 
 interface CommercialQuoteA4Props {
@@ -11,6 +12,7 @@ interface CommercialQuoteA4Props {
   deliveryDate?: string;
   quoteNumber?: string;
   pixDiscountPercent?: number; // e.g. 5% de desconto no Pix opcional
+  marketplace?: MarketplaceConfig;
 }
 
 export const CommercialQuoteA4: React.FC<CommercialQuoteA4Props> = ({
@@ -21,13 +23,11 @@ export const CommercialQuoteA4: React.FC<CommercialQuoteA4Props> = ({
   customerPhone = "",
   deliveryDate = "",
   quoteNumber = "",
-  pixDiscountPercent = 0
+  pixDiscountPercent = 0,
+  marketplace
 }) => {
-  const numMargin = Number(selectedMarginPercent);
-  const marginRow = pricing.margins.find(m => Math.abs(m.marginPercent - numMargin) < 0.005)
-    || pricing.margins.find(m => Math.abs(m.marginPercent - 1.0) < 0.005)
-    || pricing.margins[0];
-  const shopee = marginRow.marketplacePrices["shopee"];
+  const marginRow = pickMarginRow(pricing, selectedMarginPercent);
+  const shopee = marketplace ? marginRow.marketplacePrices[marketplace.id] : undefined;
   const isBatch = product.quantityInBatch > 1;
 
   const totalValue = marginRow.directSalePrice;
@@ -144,10 +144,10 @@ export const CommercialQuoteA4: React.FC<CommercialQuoteA4Props> = ({
                 {product.quantityInBatch} {isBatch ? "un" : "un"}
               </td>
               <td className="py-3 px-3 text-right font-medium text-slate-700">
-                R$ {unitValue.toFixed(2)}
+                {formatBRL(unitValue)}
               </td>
               <td className="py-3 px-3 text-right font-black text-slate-950 text-sm">
-                R$ {totalValue.toFixed(2)}
+                {formatBRL(totalValue)}
               </td>
             </tr>
           </tbody>
@@ -157,7 +157,7 @@ export const CommercialQuoteA4: React.FC<CommercialQuoteA4Props> = ({
                 TOTAL DA PROPOSTA:
               </td>
               <td colSpan={2} className="py-2 px-3 text-right font-black text-base text-slate-950">
-                R$ {totalValue.toFixed(2)}
+                {formatBRL(totalValue)}
               </td>
             </tr>
           </tfoot>
@@ -170,12 +170,12 @@ export const CommercialQuoteA4: React.FC<CommercialQuoteA4Props> = ({
           Condições Comerciais & Pagamento Facilitado
         </span>
 
-        <div className="grid grid-cols-3 gap-3 pt-1">
+        <div className={`grid ${shopee ? "grid-cols-3" : "grid-cols-2"} gap-3 pt-1`}>
           {/* Opção Pix */}
           <div className="border border-emerald-200 bg-emerald-50/50 p-2.5 rounded-lg text-center">
             <span className="text-[10px] uppercase font-bold text-emerald-800 block">Opção 1 • À Vista no Pix</span>
             <span className="text-lg font-black text-emerald-700 block my-0.5">
-              R$ {pixValue.toFixed(2)}
+              {formatBRL(pixValue)}
             </span>
             <span className="text-[10px] text-emerald-600 font-medium">Início imediato da produção</span>
           </div>
@@ -184,19 +184,21 @@ export const CommercialQuoteA4: React.FC<CommercialQuoteA4Props> = ({
           <div className="border border-slate-200 bg-white p-2.5 rounded-lg text-center">
             <span className="text-[10px] uppercase font-bold text-slate-700 block">Opção 2 • Cartão de Crédito</span>
             <span className="text-base font-black text-slate-800 block my-0.5">
-              R$ {totalValue.toFixed(2)}
+              {formatBRL(totalValue)}
             </span>
             <span className="text-[10px] text-slate-500">Parcelamento disponível via link</span>
           </div>
 
-          {/* Opção Shopee */}
+          {/* Opção Marketplace (somente com canal ativo) */}
+          {marketplace && shopee && (
           <div className="border border-orange-200 bg-orange-50/50 p-2.5 rounded-lg text-center">
-            <span className="text-[10px] uppercase font-bold text-orange-800 block">Opção 3 • Shopee</span>
+            <span className="text-[10px] uppercase font-bold text-orange-800 block">Opção 3 • {marketplace.name}</span>
             <span className="text-base font-black text-orange-700 block my-0.5">
-              R$ {(shopee?.salePrice || totalValue).toFixed(2)}
+              {formatBRL(shopee?.salePrice || totalValue)}
             </span>
             <span className="text-[10px] text-orange-600 font-medium">Frete grátis / cupons do app</span>
           </div>
+          )}
         </div>
 
         <div className="text-[11px] text-slate-600 pt-1 flex justify-between">

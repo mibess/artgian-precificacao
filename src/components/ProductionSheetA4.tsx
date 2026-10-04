@@ -1,5 +1,6 @@
 import React from "react";
-import { ProductItem, GlobalSettings, Filament, Printer, PricingBreakdown } from "../types/pricing";
+import { formatBRL, formatNumber, describeMarketplaceFees, pickMarginRow } from "../utils/calculator";
+import { ProductItem, PricingBreakdown, MarketplaceConfig } from "../types/pricing";
 import logoArtgian from "../assets/logo-artgian.png";
 
 interface ProductionSheetA4Props {
@@ -10,6 +11,8 @@ interface ProductionSheetA4Props {
   customerPhone?: string;
   deliveryDate?: string;
   orderNumber?: string;
+  marketplace?: MarketplaceConfig;
+  printerName?: string;
 }
 
 export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
@@ -19,13 +22,12 @@ export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
   customerName = "",
   customerPhone = "",
   deliveryDate = "",
-  orderNumber = ""
+  orderNumber = "",
+  marketplace,
+  printerName = "Bambu Lab A1"
 }) => {
-  const numMargin = Number(selectedMarginPercent);
-  const marginRow = pricing.margins.find(m => Math.abs(m.marginPercent - numMargin) < 0.005)
-    || pricing.margins.find(m => Math.abs(m.marginPercent - 1.0) < 0.005)
-    || pricing.margins[0];
-  const shopee = marginRow.marketplacePrices["shopee"];
+  const marginRow = pickMarginRow(pricing, selectedMarginPercent);
+  const shopee = marketplace ? marginRow.marketplacePrices[marketplace.id] : undefined;
   const isBatch = product.quantityInBatch > 1;
 
   const todayStr = new Date().toLocaleDateString("pt-BR");
@@ -119,7 +121,7 @@ export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
             2. Especificações Técnicas do Modelo (3D)
           </span>
           <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-            Máquina: Bambu Lab A1 (Bico 0.4mm)
+            Máquina: {printerName}
           </span>
         </div>
 
@@ -138,7 +140,7 @@ export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
 
           <div className="bg-slate-50 p-2 rounded border border-slate-200">
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Consumo Total de Filamento</span>
-            <span className="font-bold text-emerald-700 block text-sm">{pricing.totalGrams} g</span>
+            <span className="font-bold text-emerald-700 block text-sm">{formatNumber(pricing.totalGrams)} g</span>
           </div>
 
           <div className="bg-slate-50 p-2 rounded border border-slate-200">
@@ -160,9 +162,9 @@ export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {product.parts.map((p, i) => (
-                  <tr key={i}>
+                  <tr key={p.id || i}>
                     <td className="py-1 px-2 font-medium">{p.name}</td>
-                    <td className="py-1 px-2 font-bold">{p.filamentGrams} g</td>
+                    <td className="py-1 px-2 font-bold">{formatNumber(p.filamentGrams)} g</td>
                     <td className="py-1 px-2 text-slate-600">{p.printTimeString}</td>
                   </tr>
                 ))}
@@ -194,29 +196,41 @@ export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
           {/* Custos Diretos */}
           <div className="col-span-6 space-y-1 text-xs text-slate-600 border-r border-slate-200 pr-3">
             <div className="flex justify-between">
-              <span>Custo Filamento ({pricing.totalGrams}g):</span>
-              <span className="font-bold text-slate-800">R$ {pricing.filamentCost.toFixed(2)}</span>
+              <span>Custo Filamento ({formatNumber(pricing.totalGrams)}g):</span>
+              <span className="font-bold text-slate-800">{formatBRL(pricing.filamentCost)}</span>
             </div>
             <div className="flex justify-between">
               <span>Custo Energia ({pricing.totalTimeString}):</span>
-              <span className="font-bold text-slate-800">R$ {pricing.energyCost.toFixed(2)}</span>
+              <span className="font-bold text-slate-800">{formatBRL(pricing.energyCost)}</span>
             </div>
+            {pricing.machineCost > 0 && (
+              <div className="flex justify-between">
+                <span>Máquina (depreciação):</span>
+                <span className="font-bold text-slate-800">{formatBRL(pricing.machineCost)}</span>
+              </div>
+            )}
+            {pricing.laborCost > 0 && (
+              <div className="flex justify-between">
+                <span>Mão de obra / acabamento:</span>
+                <span className="font-bold text-slate-800">{formatBRL(pricing.laborCost)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span>Embalagem + Acessórios:</span>
-              <span className="font-bold text-slate-800">R$ {(pricing.packagingCost + pricing.accessoriesCost).toFixed(2)}</span>
+              <span className="font-bold text-slate-800">{formatBRL(pricing.packagingCost + pricing.accessoriesCost)}</span>
             </div>
             <div className="flex justify-between text-slate-500">
               <span>Custo Variável / Perda ({pricing.variableCostPercent}%{pricing.isCustomVariableCost ? " - Personalizado" : " - Padrão"}):</span>
-              <span>R$ {pricing.variableCost.toFixed(2)}</span>
+              <span>{formatBRL(pricing.variableCost)}</span>
             </div>
             <div className="flex justify-between pt-1 border-t border-slate-200 text-slate-900 font-extrabold">
               <span>CUSTO TOTAL DE PRODUÇÃO:</span>
-              <span className="text-sm text-indigo-700">R$ {pricing.totalCost.toFixed(2)}</span>
+              <span className="text-sm text-indigo-700">{formatBRL(pricing.totalCost)}</span>
             </div>
             {isBatch && (
               <div className="flex justify-between text-[11px] text-slate-500 font-medium">
                 <span>Custo Unitário ({product.quantityInBatch} un):</span>
-                <span>R$ {pricing.unitCost.toFixed(2)} / un</span>
+                <span>{formatBRL(pricing.unitCost)} / un</span>
               </div>
             )}
           </div>
@@ -226,26 +240,28 @@ export const ProductionSheetA4: React.FC<ProductionSheetA4Props> = ({
             <div className="bg-emerald-50 border border-emerald-200 p-2 rounded text-xs flex justify-between items-center">
               <div>
                 <span className="text-[9px] uppercase font-bold text-emerald-800 block">Venda Balcão / Direta ({marginRow.marginLabel})</span>
-                <span className="text-base font-black text-emerald-700">R$ {marginRow.directSalePrice.toFixed(2)}</span>
-                {isBatch && <span className="text-[10px] text-emerald-600 block">(R$ {marginRow.directUnitSalePrice.toFixed(2)} / un)</span>}
+                <span className="text-base font-black text-emerald-700">{formatBRL(marginRow.directSalePrice)}</span>
+                {isBatch && <span className="text-[10px] text-emerald-600 block">({formatBRL(marginRow.directUnitSalePrice)} / un)</span>}
               </div>
               <div className="text-right text-[11px] text-emerald-700 font-bold">
                 <span>Lucro Líquido:</span>
-                <span className="block text-xs text-emerald-800">+R$ {marginRow.directProfit.toFixed(2)}</span>
+                <span className="block text-xs text-emerald-800">+{formatBRL(marginRow.directProfit)}</span>
               </div>
             </div>
 
+            {marketplace && shopee && (
             <div className="bg-orange-50 border border-orange-200 p-2 rounded text-xs flex justify-between items-center">
               <div>
-                <span className="text-[9px] uppercase font-bold text-orange-800 block">Preço Shopee (20% + R$ 4)</span>
-                <span className="text-base font-black text-orange-700">R$ {(shopee?.salePrice || 0).toFixed(2)}</span>
-                {isBatch && <span className="text-[10px] text-orange-600 block">(R$ {(shopee?.unitSalePrice || 0).toFixed(2)} / un)</span>}
+                <span className="text-[9px] uppercase font-bold text-orange-800 block">Preço {marketplace.name} ({describeMarketplaceFees(marketplace)})</span>
+                <span className="text-base font-black text-orange-700">{formatBRL(shopee?.salePrice || 0)}</span>
+                {isBatch && <span className="text-[10px] text-orange-600 block">({formatBRL(shopee?.unitSalePrice || 0)} / un)</span>}
               </div>
               <div className="text-right text-[11px] text-orange-700 font-bold">
                 <span>Líquido Recebido:</span>
-                <span className="block text-xs text-orange-800">+R$ {(shopee?.netProfit || 0).toFixed(2)}</span>
+                <span className="block text-xs text-orange-800">+{formatBRL(shopee?.netProfit || 0)}</span>
               </div>
             </div>
+            )}
           </div>
 
         </div>

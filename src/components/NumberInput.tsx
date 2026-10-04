@@ -11,6 +11,12 @@ export interface NumberInputProps extends Omit<React.InputHTMLAttributes<HTMLInp
   suffix?: React.ReactNode;
 }
 
+/** Exibe o número no padrão pt-BR (vírgula decimal); a digitação aceita vírgula ou ponto. */
+function toDisplayText(value: number | null | undefined): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "";
+  return String(value).replace(".", ",");
+}
+
 /**
  * Input numérico inteligente com suporte a vírgula/ponto pt-BR.
  * Evita que o valor reverta para 0 enquanto o usuário apaga o campo ou digita decimais.
@@ -28,13 +34,13 @@ export const NumberInput: React.FC<NumberInputProps> = ({
   onBlur,
   ...rest
 }) => {
-  const [text, setText] = useState<string>(() => (value !== undefined && value !== null ? String(value) : ""));
+  const [text, setText] = useState<string>(() => toDisplayText(value));
   const isFocusedRef = useRef(false);
 
   // Sincroniza estado de texto se o valor mudar externamente (sem sobrescrever digitação ativa)
   useEffect(() => {
     if (!isFocusedRef.current) {
-      setText(value !== undefined && value !== null ? String(value) : "");
+      setText(toDisplayText(value));
     }
   }, [value]);
 
@@ -103,7 +109,7 @@ export const NumberInput: React.FC<NumberInputProps> = ({
     if (min !== undefined && parsed < min) parsed = min;
     if (max !== undefined && parsed > max) parsed = max;
 
-    setText(String(parsed));
+    setText(toDisplayText(parsed));
     onChange(parsed);
 
     if (onBlur) onBlur(e);

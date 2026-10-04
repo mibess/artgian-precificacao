@@ -14,13 +14,17 @@ interface ToastContainerProps {
 }
 
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
-  if (toasts.length === 0) return null;
-
+  // A região fica sempre montada para que leitores de tela anunciem as novas mensagens.
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div
+      aria-live="polite"
+      aria-relevant="additions"
+      className="no-print fixed bottom-4 right-4 left-4 sm:left-auto z-[60] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none"
+    >
       {toasts.map((toast) => (
         <div
           key={toast.id}
+          role={toast.type === "error" ? "alert" : "status"}
           className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl shadow-lg border backdrop-blur-md transition-all duration-300 animate-slide-up ${
             toast.type === "success"
               ? "bg-emerald-900/90 border-emerald-700 text-white"
@@ -32,10 +36,10 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
           }`}
         >
           <div className="shrink-0 mt-0.5">
-            {toast.type === "success" && <CheckCircle2 className="w-5 h-5 text-emerald-300" />}
-            {toast.type === "error" && <AlertCircle className="w-5 h-5 text-rose-300" />}
-            {toast.type === "warning" && <AlertTriangle className="w-5 h-5 text-amber-300" />}
-            {toast.type === "info" && <Info className="w-5 h-5 text-sky-300" />}
+            {toast.type === "success" && <CheckCircle2 className="w-5 h-5 text-emerald-300" aria-hidden="true" />}
+            {toast.type === "error" && <AlertCircle className="w-5 h-5 text-rose-300" aria-hidden="true" />}
+            {toast.type === "warning" && <AlertTriangle className="w-5 h-5 text-amber-300" aria-hidden="true" />}
+            {toast.type === "info" && <Info className="w-5 h-5 text-sky-300" aria-hidden="true" />}
           </div>
 
           <div className="flex-1 min-w-0">
@@ -46,9 +50,10 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
           <button
             type="button"
             onClick={() => onDismiss(toast.id)}
+            aria-label="Fechar notificação"
             className="shrink-0 text-slate-300 hover:text-white p-0.5 rounded cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       ))}

@@ -3,7 +3,7 @@ import { Lock, Mail, Eye, EyeOff, ArrowRight, ShieldCheck, AlertCircle, UserPlus
 import { signInWithEmail, signUpWithEmail } from "../services/supabase";
 
 interface LoginScreenProps {
-  onLoginSuccess: (userEmail: string) => void;
+  onLoginSuccess: (userEmail: string, userId?: string) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
@@ -53,11 +53,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           return;
         }
 
-        if (data?.user?.email) {
-          onLoginSuccess(data.user.email);
-        } else {
-          onLoginSuccess(email.trim());
-        }
+        onLoginSuccess(data?.user?.email || email.trim(), data?.user?.id);
       } else {
         const { data, error: authError } = await signUpWithEmail(email, password);
         if (authError) {
@@ -71,7 +67,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         }
 
         if (data?.session) {
-          onLoginSuccess(data.user?.email || email.trim());
+          onLoginSuccess(data.user?.email || email.trim(), data.user?.id);
         } else {
           setSuccessMessage("Conta criada com sucesso! Se necessário, confirme seu e-mail ou faça login agora.");
           setMode("login");

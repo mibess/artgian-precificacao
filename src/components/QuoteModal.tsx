@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { 
   ProductItem, 
   GlobalSettings, 
@@ -7,7 +7,14 @@ import {
   PackagingItem,
   CustomPackagingAddon
 } from "../types/pricing";
-import { calculatePricing, AVAILABLE_MARGIN_OPTIONS } from "../utils/calculator";
+import {
+  calculatePricing,
+  AVAILABLE_MARGIN_OPTIONS,
+  formatBRL,
+  formatNumber,
+  getPrimaryMarketplace,
+  pickMarginRow
+} from "../utils/calculator";
 import { ProductionSheetA4 } from "./ProductionSheetA4";
 import { CommercialQuoteA4 } from "./CommercialQuoteA4";
 import { 
@@ -55,14 +62,45 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
   const [deliveryDate, setDeliveryDate] = useState<string>("");
 
   const [copied, setCopied] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  const pricing = calculatePricing(product, settings, filaments, printers, packagings, customAddons);
-  const numMargin = Number(selectedMargin);
-  const marginRow = pricing.margins.find(m => Math.abs(m.marginPercent - numMargin) < 0.005)
-    || pricing.margins.find(m => Math.abs(m.marginPercent - 1.0) < 0.005)
-    || pricing.margins[0];
-  const shopeePrice = marginRow.marketplacePrices["shopee"]?.salePrice ?? 0;
+  const pricing = useMemo(
+    () => calculatePricing(product, settings, filaments, printers, packagings, customAddons),
+    [product, settings, filaments, printers, packagings, customAddons]
+  );
+  const marginRow = pickMarginRow(pricing, selectedMargin);
+  const marketplace = getPrimaryMarketplace(settings);
+  const marketplacePrice = marketplace ? marginRow.marketplacePrices[marketplace.id]?.salePrice : undefined;
   const isBatch = product.quantityInBatch > 1;
+
+  // Impressora exibida na ficha: a vinculada à peça principal ou a potência padrão
+  const mainPart = product.parts[0];
+  const linkedPrinter = mainPart?.printerId ? printers.find(p => p.id === mainPart.printerId) : undefined;
+  const printerName = linkedPrinter
+    ? linkedPrinter.name
+    : `Impressora padrão (${mainPart?.printerWattsOverride || settings.defaultPrinterWatts} W)`;
+
+  // Referência estável para o callback (o pai recria a função a cada renderização)
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Diálogo: fecha com Esc, trava a rolagem da página ao fundo e devolve o foco ao sair
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseRef.current();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();
+    };
+  }, []);
 
   // Disparar impressão nativa limpa
   const handlePrint = () => {
@@ -77,14 +115,14 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
     msg += `*Produto:* ${product.name}\n`;
     if (product.category) msg += `*Categoria:* ${product.category}\n`;
     msg += `*Tempo estimado de produção:* ${pricing.totalTimeString}\n`;
-    msg += `*Peso aproximado do modelo:* ${pricing.totalGrams}g\n\n`;
+    msg += `*Peso aproximado do modelo:* ${formatNumber(pricing.totalGrams)}g\n\n`;
 
     if (isBatch) {
       msg += `*Quantidade:* ${product.quantityInBatch} unidades (Lote)\n`;
-      msg += `*Valor Total:* R$ ${marginRow.directSalePrice.toFixed(2).replace(".", ",")}\n`;
-      msg += `*Valor Unitário:* R$ ${marginRow.directUnitSalePrice.toFixed(2).replace(".", ",")}/un\n\n`;
+      msg += `*Valor Total:* ${formatBRL(marginRow.directSalePrice)}\n`;
+      msg += `*Valor Unitário:* ${formatBRL(marginRow.directUnitSalePrice)}/un\n\n`;
     } else {
-      msg += `*Valor do Projeto:* R$ ${marginRow.directSalePrice.toFixed(2).replace(".", ",")}\n\n`;
+      msg += `*Valor do Projeto:* ${formatBRL(marginRow.directSalePrice)}\n\n`;
     }
 
     if (deliveryDate) {
@@ -94,7 +132,10 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
     msg += "💳 *Condições de Pagamento:*\n";
     msg += "• À vista via Pix com início imediato\n";
     msg += "• Cartão de Crédito parcelado\n";
-    msg += `• Compra garantida via Shopee: R$ ${shopeePrice.toFixed(2).replace(".", ",")}\n\n`;
+    if (marketplace && marketplacePrice) {
+      msg += `• Compra garantida via ${marketplace.name}: ${formatBRL(marketplacePrice)}\n`;
+    }
+    msg += "\n";
     msg += "Ficamos à disposição para tirar qualquer dúvida e iniciar a sua produção! 🚀";
 
     return msg;
@@ -112,7 +153,12 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex flex-col justify-between overflow-y-auto">
+    <div
+      className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex flex-col justify-between overflow-y-auto overscroll-contain"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Orçamento e ficha técnica: ${product.name}`}
+    >
       
       {/* TOOLBAR SUPERIOR (Oculta na impressão com .no-print) */}
       <div className="no-print sticky top-0 z-50 bg-slate-900 border-b border-slate-800 text-white px-4 sm:px-6 py-3 shadow-md">
@@ -123,9 +169,10 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
             <span className="text-xs font-bold text-amber-400 uppercase tracking-wider hidden sm:inline">
               Relatório:
             </span>
-            <div className="flex bg-slate-800 p-1 rounded-xl text-xs font-bold border border-slate-700">
+            <div className="flex flex-wrap bg-slate-800 p-1 rounded-xl text-xs font-bold border border-slate-700" role="group" aria-label="Tipo de documento">
               <button
                 type="button"
+                aria-pressed={activeDocType === "production"}
                 onClick={() => setActiveDocType("production")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                   activeDocType === "production"
@@ -139,6 +186,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
               <button
                 type="button"
+                aria-pressed={activeDocType === "commercial"}
                 onClick={() => setActiveDocType("commercial")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                   activeDocType === "commercial"
@@ -152,6 +200,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
               <button
                 type="button"
+                aria-pressed={activeDocType === "whatsapp"}
                 onClick={() => setActiveDocType("whatsapp")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                   activeDocType === "whatsapp"
@@ -168,8 +217,9 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
           {/* Seletor de Margem & Botão de Impressão */}
           <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 font-medium">Margem:</span>
+              <label htmlFor="quote-margin" className="text-xs text-slate-400 font-medium">Margem:</label>
               <select
+                id="quote-margin"
                 value={selectedMargin.toString()}
                 onChange={(e) => {
                   const val = Number(e.target.value);
@@ -206,8 +256,11 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
             )}
 
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={onClose}
+              title="Fechar (Esc)"
+              aria-label="Fechar orçamento"
               className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
             >
               <X className="w-5 h-5" />
@@ -225,6 +278,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                 type="text"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
+                aria-label="Nome do cliente"
                 placeholder="Nome do Cliente (ou deixe vazio para escrever à mão)"
                 className="w-full pl-8 pr-2 py-1 bg-slate-800/70 border border-slate-700 rounded text-slate-200 placeholder-slate-500 text-xs focus:ring-1 focus:ring-amber-400 focus:bg-slate-800"
               />
@@ -236,6 +290,9 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                 type="text"
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
+                inputMode="tel"
+                autoComplete="off"
+                aria-label="Telefone ou WhatsApp do cliente"
                 placeholder="Telefone / WhatsApp (ex: (11) 99999-9999)"
                 className="w-full pl-8 pr-2 py-1 bg-slate-800/70 border border-slate-700 rounded text-slate-200 placeholder-slate-500 text-xs focus:ring-1 focus:ring-amber-400 focus:bg-slate-800"
               />
@@ -247,6 +304,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                 type="text"
                 value={deliveryDate}
                 onChange={(e) => setDeliveryDate(e.target.value)}
+                aria-label="Prazo de entrega"
                 placeholder="Prazo de Entrega (ex: 22/09/2026)"
                 className="w-full pl-8 pr-2 py-1 bg-slate-800/70 border border-slate-700 rounded text-slate-200 placeholder-slate-500 text-xs focus:ring-1 focus:ring-amber-400 focus:bg-slate-800"
               />
@@ -284,6 +342,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
           </div>
         ) : (
           /* Folha de Papel A4 com proporção e sombra realista */
+          <div className="max-w-full overflow-x-auto print:overflow-visible">
           <div 
             id="printable-a4-document"
             className="bg-white shadow-2xl rounded-sm mx-auto overflow-hidden print:shadow-none print:rounded-none"
@@ -297,6 +356,8 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                 customerName={customerName}
                 customerPhone={customerPhone}
                 deliveryDate={deliveryDate}
+                marketplace={marketplace}
+                printerName={printerName}
               />
             ) : (
               <CommercialQuoteA4
@@ -306,8 +367,10 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                 customerName={customerName}
                 customerPhone={customerPhone}
                 deliveryDate={deliveryDate}
+                marketplace={marketplace}
               />
             )}
+          </div>
           </div>
         )}
 

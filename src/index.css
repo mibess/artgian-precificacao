@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+/* Animações usadas pelos componentes (não existem por padrão no Tailwind v4) */
+@theme {
+  --animate-slide-up: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 0.2s ease-out;
+
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+
+/* Compatibilidade com classes "animate-in fade-in" já usadas no JSX */
+.animate-in.fade-in {
+  animation: var(--animate-fade-in);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
@@ -63,6 +89,54 @@ input[type="submit"]:disabled {
 /* Interatividade para selects e labels clicáveis */
 select {
   cursor: pointer;
+}
+
+/* Foco visível apenas para navegação por teclado (não aparece no clique do mouse) */
+:where(button, a, select, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Link "Pular para o conteúdo" (visível somente ao receber foco pelo teclado) */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 100;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 8px;
+}
+
+/* Números alinhados em tabelas e valores monetários */
+table, .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Respeita a preferência do sistema por menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  button:active:not(:disabled),
+  [role="button"]:active:not([aria-disabled="true"]),
+  nav a:active {
+    scale: 1;
+  }
 }
 
 
