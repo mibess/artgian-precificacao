@@ -273,14 +273,18 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   };
 
   const applyExtractedData = (result: SlicerParseResult) => {
-    // Se detectou quebra de filamentos AMS (ex: 14g PLA + 3g PLA)
+    // Se detectou quebra de filamentos AMS ou placas
     if (result.partsBreakdown && result.partsBreakdown.length > 1) {
       const newParts: ProductPart[] = result.partsBreakdown.map((p, idx) => ({
         id: "part-" + Date.now() + "-" + idx,
         name: p.name,
         filamentGrams: p.filamentGrams,
         printTimeString: idx === 0 ? result.timeString : "0min",
-        printTimeHours: idx === 0 ? result.timeHours : 0
+        printTimeHours: idx === 0 ? result.timeHours : 0,
+        filamentId: parts[idx]?.filamentId || parts[0]?.filamentId,
+        printerId: parts[idx]?.printerId || parts[0]?.printerId,
+        filamentPricePerKgOverride: parts[idx]?.filamentPricePerKgOverride ?? parts[0]?.filamentPricePerKgOverride,
+        printerWattsOverride: parts[idx]?.printerWattsOverride ?? parts[0]?.printerWattsOverride
       }));
       setParts(newParts);
       setIsMultiPart(true);
@@ -291,7 +295,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
         name: parts[0]?.name || "Peça Principal",
         filamentGrams: result.filamentGrams,
         printTimeString: result.timeString,
-        printTimeHours: result.timeHours
+        printTimeHours: result.timeHours,
+        filamentId: parts[0]?.filamentId,
+        printerId: parts[0]?.printerId,
+        filamentPricePerKgOverride: parts[0]?.filamentPricePerKgOverride,
+        printerWattsOverride: parts[0]?.printerWattsOverride
       };
       setParts([newPart]);
       setIsMultiPart(false);
