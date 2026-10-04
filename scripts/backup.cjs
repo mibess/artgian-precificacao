@@ -6,9 +6,11 @@
 const fs = require("fs");
 const path = require("path");
 
-// Carregar variáveis de .env.local se disponíveis
+// Carregar variáveis do ambiente escolhido: APP_ENV=development|production (padrão: production)
 function loadEnv() {
-  const envPath = path.resolve(process.cwd(), ".env.local");
+  const appEnv = process.env.APP_ENV === "development" ? "development" : "production";
+  const envPath = path.resolve(process.cwd(), `.env.${appEnv}.local`);
+  console.log(`Ambiente do backup: ${appEnv}`);
   if (fs.existsSync(envPath)) {
     const content = fs.readFileSync(envPath, "utf8");
     for (const line of content.split("\n")) {

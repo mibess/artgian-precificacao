@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Lock, Mail, Eye, EyeOff, ArrowRight, ShieldCheck, AlertCircle, UserPlus, CheckCircle2 } from "lucide-react";
-import { signInWithEmail, signUpWithEmail, isSupabaseConfigured } from "../services/supabase";
+import { signInWithEmail, signUpWithEmail } from "../services/supabase";
 
 interface LoginScreenProps {
   onLoginSuccess: (userEmail: string) => void;
@@ -33,15 +33,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
     if (password.length < 6) {
       setError("A senha deve ter no mínimo 6 caracteres.");
-      return;
-    }
-
-    // Se Supabase não estiver configurado, permite modo local
-    if (!isSupabaseConfigured()) {
-      setIsLoading(true);
-      setTimeout(() => {
-        onLoginSuccess(email.trim());
-      }, 300);
       return;
     }
 

@@ -18,7 +18,7 @@ import {
   LogOut
 } from "lucide-react";
 import { GlobalSettings } from "../types/pricing";
-import { isSupabaseConfigured } from "../services/supabase";
+import { IS_DEV } from "../config/env";
 import { TAB_ROUTES, TabType } from "../utils/routes";
 
 interface NavbarProps {
@@ -77,32 +77,31 @@ export const Navbar: React.FC<NavbarProps> = ({
               </a>
 
               {/* Status de Nuvem Compacto (Supabase) */}
-              <div className="ml-1 pl-3 border-l border-slate-200">
-                {isSupabaseConfigured() ? (
-                  <div 
-                    title={isSyncing ? "Sincronizando dados com o Supabase..." : "Conectado ao Supabase (Sincronização em Nuvem Ativa)"}
-                    className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium"
+              <div className="ml-1 pl-3 border-l border-slate-200 flex items-center gap-2">
+                <div 
+                  title={isSyncing ? "Sincronizando dados com o Supabase..." : "Conectado ao Supabase"}
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium"
+                >
+                  <span className="relative flex h-2 w-2">
+                    {isSyncing && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    )}
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="hidden sm:inline">
+                    {isSyncing ? "Salvando..." : "Nuvem Ativa"}
+                  </span>
+                </div>
+                {IS_DEV && (
+                  <span
+                    title="Você está usando o banco de DESENVOLVIMENTO"
+                    className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-800 text-[10px] font-extrabold tracking-wide"
                   >
-                    <span className="relative flex h-2 w-2">
-                      {isSyncing && (
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      )}
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <span className="hidden sm:inline">
-                      {isSyncing ? "Salvando..." : "Nuvem Ativa"}
-                    </span>
-                  </div>
-                ) : (
-                  <div 
-                    title="Armazenamento local ativo"
-                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-[11px] font-medium"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                    <span className="hidden sm:inline">Local</span>
-                  </div>
+                    DEV
+                  </span>
                 )}
               </div>
+
             </div>
 
             {/* Navegação Central (Desktop) */}

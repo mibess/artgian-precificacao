@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ProductItem, GlobalSettings, Filament, Printer, PackagingItem, CustomPackagingAddon } from "./types/pricing";
-import { defaultProducts, defaultSettings, defaultFilaments, defaultPrinters, defaultPackagings, defaultCustomPackagingAddons } from "./data/defaultData";
+import { defaultSettings, defaultFilaments, defaultPrinters, defaultPackagings, defaultCustomPackagingAddons } from "./data/defaultData";
+import { APP_ENV } from "./config/env";
+import { FullScreenMessage } from "./components/FullScreenMessage";
 import { Navbar } from "./components/Navbar";
 import { ProductList } from "./components/ProductList";
 import { ProductEditor } from "./components/ProductEditor";
@@ -51,66 +53,23 @@ export function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  // Estado persistido no LocalStorage (Offline-first)
-  const [products, setProducts] = useState<ProductItem[]>(() => {
-    const saved = localStorage.getItem("3dprice_products");
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return defaultProducts;
-  });
+  // Estado em memória: espelho dos dados da nuvem (nada é persistido no navegador)
+  const [products, setProducts] = useState<ProductItem[]>([]);
   const productsRef = useRef<ProductItem[]>(products);
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
 
-  const [settings, setSettings] = useState<GlobalSettings>(() => {
-    const saved = localStorage.getItem("3dprice_settings");
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return defaultSettings;
-  });
+  const [settings, setSettings] = useState<GlobalSettings>(defaultSettings);
+  const [filaments, setFilaments] = useState<Filament[]>(defaultFilaments);
+  const [printers, setPrinters] = useState<Printer[]>(defaultPrinters);
+  const [packagings, setPackagings] = useState<PackagingItem[]>(defaultPackagings);
+  const [customAddons, setCustomAddons] = useState<CustomPackagingAddon[]>(defaultCustomPackagingAddons);
 
-  const [filaments, setFilaments] = useState<Filament[]>(() => {
-    const saved = localStorage.getItem("3dprice_filaments");
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return defaultFilaments;
-  });
-
-  const [printers, setPrinters] = useState<Printer[]>(() => {
-    const saved = localStorage.getItem("3dprice_printers");
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return defaultPrinters;
-  });
-
-  const [packagings, setPackagings] = useState<PackagingItem[]>(() => {
-    const saved = localStorage.getItem("3dprice_packagings");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch (e) { console.error(e); }
-    }
-    return defaultPackagings;
-  });
-
-  const [customAddons, setCustomAddons] = useState<CustomPackagingAddon[]>(() => {
-    const saved = localStorage.getItem("3dprice_packaging_addons");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (e) { console.error(e); }
-    }
-    return defaultCustomPackagingAddons;
-  });
+  // Estado de carga da nuvem
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Contador de sincronizações ativas
   const [syncOps, setSyncOps] = useState<number>(0);
@@ -120,47 +79,23 @@ export function App() {
 
   // Navegação sincronizada com URL e Rotas
   const [activeTab, setActiveTab] = useState<TabType>(() => getTabFromPath(window.location.pathname));
-  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(() => {
-    const prodId = getProductIdFromSearch(window.location.search);
-    if (prodId) {
-      const saved = localStorage.getItem("3dprice_products");
-      if (saved) {
-        try {
-          const parsed: ProductItem[] = JSON.parse(saved);
-          return parsed.find(p => p.id === prodId) || null;
-        } catch {}
-      }
-      return defaultProducts.find(p => p.id === prodId) || null;
-    }
-    return null;
-  });
+  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [quoteProduct, setQuoteProduct] = useState<ProductItem | null>(null);
   const [quoteMargin, setQuoteMargin] = useState<number>(1.0);
 
-  // Autenticação Supabase
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (!isSupabaseConfigured()) return true;
-    return Boolean(localStorage.getItem("artgian_auth_user"));
-  });
+  // Autenticação: a sessão é gerenciada exclusivamente pelo Supabase Auth
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authChecking, setAuthChecking] = useState<boolean>(() => isSupabaseConfigured());
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
-    getCurrentUser().then(user => {
-      if (user) {
-        localStorage.setItem("artgian_auth_user", user.email || "autenticado");
-        setIsAuthenticated(true);
-      }
-    });
+    getCurrentUser()
+      .then(user => setIsAuthenticated(Boolean(user)))
+      .finally(() => setAuthChecking(false));
 
     const { data: authListener } = onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        localStorage.setItem("artgian_auth_user", session.user.email || "autenticado");
-        setIsAuthenticated(true);
-      } else {
-        localStorage.removeItem("artgian_auth_user");
-        setIsAuthenticated(false);
-      }
+      setIsAuthenticated(Boolean(session?.user));
     });
 
     return () => {
@@ -169,7 +104,6 @@ export function App() {
   }, []);
 
   const handleLoginSuccess = (userEmail: string) => {
-    localStorage.setItem("artgian_auth_user", userEmail);
     setIsAuthenticated(true);
     showToast(`Bem-vindo, ${userEmail}!`, "success");
   };
@@ -177,11 +111,13 @@ export function App() {
   const handleLogout = async () => {
     if (window.confirm("Deseja realmente sair do sistema?")) {
       await signOutFromCloud();
-      localStorage.removeItem("artgian_auth_user");
+      setProducts([]);
+      setDataLoaded(false);
       setIsAuthenticated(false);
       showToast("Sessão encerrada com sucesso.", "info");
     }
   };
+
 
   // Navegação centralizada que atualiza a URL sem recarregar a página
   const navigateToTab = (tab: TabType, productToEdit?: ProductItem | null, replace = false) => {
@@ -231,13 +167,15 @@ export function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  // Carregamento inicial do Supabase com Reconciliação Inteligente
+  // Carregamento da nuvem (única fonte de verdade). Em caso de erro, não usa dados locais.
   useEffect(() => {
     if (!isSupabaseConfigured() || !isAuthenticated) return;
 
     let isMounted = true;
     async function loadCloudData() {
       startSync();
+      setLoadError(null);
+      setDataLoaded(false);
       try {
         const [cloudProds, cloudSettings, cloudFilaments, cloudPrinters, cloudPackagings, cloudCustomAddons] = await Promise.all([
           fetchProductsFromCloud(),
@@ -250,46 +188,30 @@ export function App() {
 
         if (!isMounted) return;
 
-        // Reconciliar produtos por updatedAt
-        if (cloudProds) {
-          setProducts(prevLocal => {
-            const localMap = new Map(prevLocal.map(p => [p.id, p]));
-            const merged = [...cloudProds];
-
-            // Manter e subir produtos locais mais recentes ou não existentes na nuvem
-            for (const local of prevLocal) {
-              const cloudMatch = cloudProds.find(cp => cp.id === local.id);
-              if (!cloudMatch) {
-                merged.push(local);
-                saveProductToCloud(local).catch(console.error);
-              } else {
-                const localTime = new Date(local.updatedAt).getTime();
-                const cloudTime = new Date(cloudMatch.updatedAt).getTime();
-                if (localTime > cloudTime) {
-                  const idx = merged.findIndex(m => m.id === local.id);
-                  if (idx >= 0) merged[idx] = local;
-                  saveProductToCloud(local).catch(console.error);
-                }
-              }
-            }
-
-            const prodId = getProductIdFromSearch(window.location.search);
-            if (prodId) {
-              const found = merged.find(p => p.id === prodId);
-              if (found) setEditingProduct(found);
-            }
-
-            return merged;
-          });
+        // Produtos são essenciais: null significa falha de rede/permissão (vazio é []).
+        if (cloudProds === null) {
+          setLoadError("Falha ao consultar os produtos no banco. Verifique sua conexão e se as tabelas do banco deste ambiente foram criadas.");
+          return;
         }
 
+        setProducts(cloudProds);
+
+        // Insumos ausentes (usuário novo): mantém padrões em memória até o primeiro salvamento.
         if (cloudSettings) setSettings(cloudSettings);
         if (cloudFilaments && cloudFilaments.length > 0) setFilaments(cloudFilaments);
         if (cloudPrinters && cloudPrinters.length > 0) setPrinters(cloudPrinters);
         if (cloudPackagings && cloudPackagings.length > 0) setPackagings(cloudPackagings);
         if (cloudCustomAddons && cloudCustomAddons.length > 0) setCustomAddons(cloudCustomAddons);
+
+        const prodId = getProductIdFromSearch(window.location.search);
+        if (prodId) {
+          setEditingProduct(cloudProds.find(p => p.id === prodId) || null);
+        }
+
+        setDataLoaded(true);
       } catch (err) {
-        console.warn("[App] Erro na sincronização com a nuvem:", err);
+        console.warn("[App] Erro ao carregar dados da nuvem:", err);
+        if (isMounted) setLoadError("Erro inesperado ao carregar os dados da nuvem.");
       } finally {
         if (isMounted) endSync();
       }
@@ -297,35 +219,10 @@ export function App() {
 
     loadCloudData();
     return () => { isMounted = false; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, reloadKey]);
 
-  // Sincronizar com LocalStorage
-  useEffect(() => {
-    localStorage.setItem("3dprice_products", JSON.stringify(products));
-    localStorage.setItem("3dprice_schema_version", "2");
-  }, [products]);
 
-  useEffect(() => {
-    localStorage.setItem("3dprice_settings", JSON.stringify(settings));
-  }, [settings]);
-
-  useEffect(() => {
-    localStorage.setItem("3dprice_filaments", JSON.stringify(filaments));
-  }, [filaments]);
-
-  useEffect(() => {
-    localStorage.setItem("3dprice_printers", JSON.stringify(printers));
-  }, [printers]);
-
-  useEffect(() => {
-    localStorage.setItem("3dprice_packagings", JSON.stringify(packagings));
-  }, [packagings]);
-
-  useEffect(() => {
-    localStorage.setItem("3dprice_packaging_addons", JSON.stringify(customAddons));
-  }, [customAddons]);
-
-  // Ações de Produtos
+  // Ações de Produtos (a nuvem é a única fonte de verdade; estado em memória é espelho)
   const handleSaveProduct = async (savedProduct: ProductItem) => {
     setProducts(prev => {
       const idx = prev.findIndex(p => p.id === savedProduct.id);
@@ -338,17 +235,13 @@ export function App() {
     });
     navigateToTab("catalog");
 
-    if (isSupabaseConfigured()) {
-      startSync();
-      const ok = await saveProductToCloud(savedProduct);
-      endSync();
-      if (ok) {
-        showToast(`Produto "${savedProduct.name}" salvo com sucesso!`, "success");
-      } else {
-        showToast(`Produto salvo localmente, mas houve falha ao sincronizar com a nuvem.`, "warning");
-      }
+    startSync();
+    const ok = await saveProductToCloud(savedProduct);
+    endSync();
+    if (ok) {
+      showToast(`Produto "${savedProduct.name}" salvo com sucesso!`, "success");
     } else {
-      showToast(`Produto "${savedProduct.name}" salvo localmente.`, "success");
+      showToast(`Falha ao salvar "${savedProduct.name}" na nuvem. Recarregue a página antes de continuar.`, "error");
     }
   };
 
@@ -364,13 +257,13 @@ export function App() {
     };
     setProducts(prev => [duplicated, ...prev]);
 
-    if (isSupabaseConfigured()) {
-      startSync();
-      const ok = await saveProductToCloud(duplicated);
-      endSync();
-      if (ok) {
-        showToast(`Cópia criada: "${duplicated.name}"`, "success");
-      }
+    startSync();
+    const ok = await saveProductToCloud(duplicated);
+    endSync();
+    if (ok) {
+      showToast(`Cópia criada: "${duplicated.name}"`, "success");
+    } else {
+      showToast("Falha ao salvar a cópia na nuvem.", "error");
     }
   };
 
@@ -380,76 +273,61 @@ export function App() {
 
     if (window.confirm(`Deseja realmente excluir "${prodName}"?`)) {
       setProducts(prev => prev.filter(p => p.id !== productId));
-      if (isSupabaseConfigured()) {
-        startSync();
-        const ok = await deleteProductFromCloud(productId);
-        endSync();
-        if (ok) {
-          showToast(`"${prodName}" excluído com sucesso.`, "info");
-        } else {
-          showToast(`Excluído localmente, mas erro ao apagar da nuvem.`, "warning");
-        }
+      startSync();
+      const ok = await deleteProductFromCloud(productId);
+      endSync();
+      if (ok) {
+        showToast(`"${prodName}" excluído com sucesso.`, "info");
       } else {
-        showToast(`"${prodName}" excluído.`, "info");
+        showToast("Erro ao apagar da nuvem. Recarregue a página para ver o estado real.", "error");
       }
     }
   };
 
   const handleSaveSettings = async (newSettings: GlobalSettings) => {
     setSettings(newSettings);
-    if (isSupabaseConfigured()) {
-      startSync();
-      const ok = await saveSettingsToCloud(newSettings);
-      endSync();
-      if (ok) {
-        showToast("Configurações salvas e sincronizadas na nuvem!", "success");
-      } else {
-        showToast("Configurações salvas localmente, mas falha ao sincronizar.", "warning");
-      }
+    startSync();
+    const ok = await saveSettingsToCloud(newSettings);
+    endSync();
+    if (ok) {
+      showToast("Configurações salvas na nuvem!", "success");
     } else {
-      showToast("Configurações salvas com sucesso!", "success");
+      showToast("Falha ao salvar as configurações na nuvem.", "error");
     }
   };
 
   const handleSaveFilaments = async (newFilaments: Filament[]) => {
     setFilaments(newFilaments);
-    if (isSupabaseConfigured()) {
-      startSync();
-      const ok = await saveAllFilamentsToCloud(newFilaments);
-      endSync();
-      if (!ok) showToast("Aviso: filamentos salvos localmente, erro na nuvem.", "warning");
-    }
+    startSync();
+    const ok = await saveAllFilamentsToCloud(newFilaments);
+    endSync();
+    if (!ok) showToast("Falha ao salvar filamentos na nuvem.", "error");
   };
 
   const handleSavePrinters = async (newPrinters: Printer[]) => {
     setPrinters(newPrinters);
-    if (isSupabaseConfigured()) {
-      startSync();
-      const ok = await saveAllPrintersToCloud(newPrinters);
-      endSync();
-      if (!ok) showToast("Aviso: impressoras salvas localmente, erro na nuvem.", "warning");
-    }
+    startSync();
+    const ok = await saveAllPrintersToCloud(newPrinters);
+    endSync();
+    if (!ok) showToast("Falha ao salvar impressoras na nuvem.", "error");
   };
 
   const handleSavePackagings = async (newPackagings: PackagingItem[]) => {
     setPackagings(newPackagings);
-    if (isSupabaseConfigured()) {
-      startSync();
-      const ok = await saveAllPackagingsToCloud(newPackagings);
-      endSync();
-      if (!ok) showToast("Aviso: embalagens salvas localmente, erro na nuvem.", "warning");
-    }
+    startSync();
+    const ok = await saveAllPackagingsToCloud(newPackagings);
+    endSync();
+    if (!ok) showToast("Falha ao salvar embalagens na nuvem.", "error");
   };
 
   const handleSaveCustomAddons = async (newAddons: CustomPackagingAddon[]) => {
     setCustomAddons(newAddons);
-    if (isSupabaseConfigured()) {
-      startSync();
-      const ok = await saveAllCustomAddonsToCloud(newAddons);
-      endSync();
-      if (!ok) showToast("Aviso: personalizados salvos localmente, erro na nuvem.", "warning");
-    }
+    startSync();
+    const ok = await saveAllCustomAddonsToCloud(newAddons);
+    endSync();
+    if (!ok) showToast("Falha ao salvar personalizados na nuvem.", "error");
   };
+
 
   const handleEditProduct = (prod: ProductItem) => {
     navigateToTab("editor", prod);
@@ -464,9 +342,42 @@ export function App() {
     showToast("Catálogo Excel exportado com sucesso!", "success");
   };
 
+  // Sem credenciais do Supabase para o ambiente atual: orienta a configurar
+  if (!isSupabaseConfigured()) {
+    return (
+      <FullScreenMessage
+        title={`Banco de ${APP_ENV === "production" ? "produção" : "desenvolvimento"} não configurado`}
+        description={
+          APP_ENV === "production"
+            ? "Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nas variáveis de ambiente do build de produção."
+            : "Crie o arquivo .env.development.local com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY do projeto Supabase de desenvolvimento (veja o README)."
+        }
+      />
+    );
+  }
+
+  if (authChecking) {
+    return <FullScreenMessage title="Verificando sessão..." />;
+  }
+
   // Se não estiver autenticado, exige login
   if (!isAuthenticated) {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (loadError) {
+    return (
+      <FullScreenMessage
+        title="Não foi possível carregar seus dados"
+        description={loadError}
+        actionLabel="Tentar novamente"
+        onAction={() => setReloadKey(k => k + 1)}
+      />
+    );
+  }
+
+  if (!dataLoaded) {
+    return <FullScreenMessage title="Carregando seus dados da nuvem..." />;
   }
 
   return (

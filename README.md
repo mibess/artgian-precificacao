@@ -42,7 +42,7 @@ Sistema web profissional de precificação e gestão financeira para impressão 
 5. **Segurança & Sincronização Inteligente:**
    - Supabase Auth com login e cadastro via e-mail e senha.
    - Row Level Security (RLS) garantindo que cada usuário acesse apenas seus próprios produtos e configurações.
-   - Reconciliação inteligente com LocalStorage por timestamp (`updatedAt`) com feedback via Toasts.
+   - Nuvem como única fonte de verdade, com feedback de sucesso/erro via Toasts.
    - Proteção contra exclusão acidental em cascata de filamentos ou impressoras em uso.
 
 ---
@@ -57,27 +57,33 @@ cd artgian-precificacao
 npm install
 ```
 
-### 2. Configurar variáveis de ambiente
+### 2. Dois bancos na nuvem (desenvolvimento e produção)
 
-Crie o arquivo `.env` na raiz do projeto a partir do exemplo:
+A aplicação **não usa banco local nem LocalStorage para dados**: tudo vive no Supabase.
+Existem exatamente dois projetos Supabase:
 
-```bash
-cp .env.example .env
-```
+| Ambiente | Comando | Arquivo de credenciais | Banco |
+|---|---|---|---|
+| Desenvolvimento | `npm run dev` | `.env.development.local` | Projeto Supabase de **desenvolvimento** |
+| Produção | `npm run build` / deploy | `.env.production.local` (ou variáveis do provedor, ex.: Vercel) | Projeto Supabase de **produção** |
 
-Preencha com as credenciais do seu projeto Supabase:
+Cada arquivo contém:
 
 ```env
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-anon-key-aqui
 ```
 
-### 3. Rodar as migrações do banco no Supabase
+Em desenvolvimento a barra superior exibe o selo **DEV**. Sem credenciais, o app mostra uma tela orientando a configurar o ambiente.
 
-Execute o script SQL localizado em:
-`supabase/migrations/20261004_auth_and_rls.sql`
+### 3. Criar o banco de desenvolvimento
 
-Ele cria as tabelas com suporte a multiusuário (`owner_id`), constraints de integridade e ativa o Row Level Security (RLS).
+1. Crie um novo projeto no Supabase (ex.: `artgian-precificacao-dev`).
+2. No SQL Editor, execute **`supabase/setup_dev.sql`** (cria todas as tabelas com `owner_id` e RLS restrito).
+3. Em *Authentication → Providers → Email*, desative "Confirm email" (facilita contas de teste).
+4. Preencha `.env.development.local` com a URL e a anon key desse projeto.
+
+O banco de produção segue o fluxo de migrações em `supabase/migrations/`.
 
 ### 4. Executar em desenvolvimento
 
@@ -113,7 +119,8 @@ Os testes cobrem:
 O script de backup exporta todo o banco em formato JSON estruturado e script SQL de restauração:
 
 ```bash
-npm run backup
+npm run backup                        # produção (padrão)
+APP_ENV=development npm run backup    # desenvolvimento
 ```
 
 Os backups são gravados automaticamente na pasta `supabase/backups/`.
