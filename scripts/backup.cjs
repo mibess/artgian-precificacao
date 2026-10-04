@@ -26,8 +26,14 @@ function loadEnv() {
 
 loadEnv();
 
-const url = process.env.VITE_SUPABASE_URL || "https://ynnhaduowfgjzsjgqoyk.supabase.co";
-const key = process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_IK33k_vY76hHnhynuSOONg_fN_7M3b-";
+const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+if (!url || !key) {
+  console.error("ERRO: Variáveis de ambiente SUPABASE_URL (ou VITE_SUPABASE_URL) e SUPABASE_ANON_KEY (ou VITE_SUPABASE_ANON_KEY) são obrigatórias.");
+  console.error("Configure-as em .env.local ou nas variáveis do sistema.");
+  process.exit(1);
+}
 
 async function fetchTable(table) {
   const res = await fetch(`${url}/rest/v1/${table}?select=*`, {

@@ -11,6 +11,9 @@ import { exportToExcel } from "./utils/excelIO";
 import { LoginScreen } from "./components/LoginScreen";
 import {
   isSupabaseConfigured,
+  getCurrentUser,
+  signOutFromCloud,
+  onAuthStateChange,
   fetchProductsFromCloud,
   saveProductToCloud,
   deleteProductFromCloud,
@@ -117,20 +120,45 @@ export function App() {
   const [quoteProduct, setQuoteProduct] = useState<ProductItem | null>(null);
   const [quoteMargin, setQuoteMargin] = useState<number>(1.0);
 
-  // Autenticação de Administrador
+  // Autenticação Supabase
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    const savedUser = localStorage.getItem("artgian_auth_user");
-    const expectedUser = import.meta.env.VITE_ADMIN_USERNAME || "artgian";
-    return savedUser === expectedUser;
+    if (!isSupabaseConfigured()) return true;
+    return Boolean(localStorage.getItem("artgian_auth_user"));
   });
 
-  const handleLoginSuccess = (user: string) => {
-    localStorage.setItem("artgian_auth_user", user);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    getCurrentUser().then(user => {
+      if (user) {
+        localStorage.setItem("artgian_auth_user", user.email || "autenticado");
+        setIsAuthenticated(true);
+      }
+    });
+
+    const { data: authListener } = onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        localStorage.setItem("artgian_auth_user", session.user.email || "autenticado");
+        setIsAuthenticated(true);
+      } else {
+        localStorage.removeItem("artgian_auth_user");
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  const handleLoginSuccess = (userEmail: string) => {
+    localStorage.setItem("artgian_auth_user", userEmail);
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (window.confirm("Deseja realmente sair do sistema?")) {
+      await signOutFromCloud();
       localStorage.removeItem("artgian_auth_user");
       setIsAuthenticated(false);
     }

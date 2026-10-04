@@ -26,4 +26,6 @@ Thumbs.db
 .idea/
 .vercel
 .env*
+!.env.example
 supabase/backups/
+supabase/.temp/
