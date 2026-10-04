@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { 
   ProductItem, 
   ProductPart, 
@@ -12,6 +12,7 @@ import {
 import { calculatePricing, simulateCustomSalePrice } from "../utils/calculator";
 import { parseTimeToHours, formatHoursToTimeString } from "../utils/timeParser";
 import { parseSlicerFile, parseSlicerText, SlicerParseResult } from "../utils/slicerParser";
+import { NumberInput } from "./NumberInput";
 import { 
   ArrowLeft, 
   Save, 
@@ -133,6 +134,44 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
           }
         ]
   );
+
+  // Nome dinâmico da impressora da peça principal
+  const mainPrinterName = useMemo(() => {
+    const pId = parts[0]?.printerId;
+    if (pId) {
+      const found = printers.find(p => p.id === pId);
+      if (found) return found.name;
+    }
+    if (printers.length > 0) return printers[0].name;
+    return `Padrão (${settings.defaultPrinterWatts} W)`;
+  }, [parts, printers, settings.defaultPrinterWatts]);
+
+  // Alternar com segurança para Peça Única consolidando partes se houver mais de uma
+  const handleSwitchToSinglePart = () => {
+    if (parts.length > 1) {
+      const totalGrams = Math.round(parts.reduce((sum, p) => sum + (p.filamentGrams || 0), 0) * 100) / 100;
+      const totalHours = parts.reduce((sum, p) => sum + (p.printTimeHours || 0), 0);
+      const confirmMessage = `Você possui ${parts.length} partes configuradas.\n\nDeseja consolidar todas as partes somando seus pesos (${totalGrams}g) e tempos (${formatHoursToTimeString(totalHours)}) em uma única peça principal?`;
+      
+      if (window.confirm(confirmMessage)) {
+        const consolidated: ProductPart = {
+          id: parts[0]?.id || "part-1",
+          name: "Peça Principal",
+          filamentGrams: totalGrams,
+          printTimeHours: totalHours,
+          printTimeString: formatHoursToTimeString(totalHours),
+          filamentId: parts[0]?.filamentId,
+          printerId: parts[0]?.printerId,
+          filamentPricePerKgOverride: parts[0]?.filamentPricePerKgOverride,
+          printerWattsOverride: parts[0]?.printerWattsOverride
+        };
+        setParts([consolidated]);
+        setIsMultiPart(false);
+      }
+    } else {
+      setIsMultiPart(false);
+    }
+  };
 
   // Simulação personalizada (Venda Direta ou Shopee)
   const [customPrice, setCustomPrice] = useState<string>("");
@@ -364,7 +403,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                 {product ? ("Editar: " + product.name) : "Cadastrar & Precificar Produto"}
               </h2>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                <PrinterIcon className="w-3 h-3" /> Bambu Lab A1
+                <PrinterIcon className="w-3 h-3" /> {mainPrinterName}
               </span>
             </div>
             <p className="text-xs text-slate-500">
@@ -567,11 +606,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                   <span>Quantidade no Lote</span>
                   <span className="text-[11px] text-slate-400 font-normal">Impressos juntos na mesa</span>
                 </label>
-                <input
-                  type="number"
-                  min="1"
+                <NumberInput
+                  min={1}
+                  allowDecimals={false}
                   value={quantityInBatch}
-                  onChange={(e) => setQuantityInBatch(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  onChange={(val) => setQuantityInBatch(Math.max(1, Math.round(val) || 1))}
                   className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all font-bold text-slate-800"
                 />
               </div>
@@ -584,9 +623,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                 <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-semibold">
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsMultiPart(false);
-                    }}
+                    onClick={handleSwitchToSinglePart}
                     className={"px-3 py-1 rounded-md transition-all " + (
                       !isMultiPart ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800"
                     )}
@@ -674,12 +711,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                         <span className="text-[11px] text-slate-400 font-medium">gramas</span>
                       </div>
                       <div className="relative">
-                        <input
-                          type="number"
+                        <NumberInput
                           step="0.1"
-                          min="0"
+                          min={0}
                           value={part.filamentGrams}
-                          onChange={(e) => updatePart(index, "filamentGrams", parseFloat(e.target.value) || 0)}
+                          onChange={(val) => updatePart(index, "filamentGrams", val)}
                           className="w-full pl-3 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">g</span>
@@ -944,12 +980,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                     </div>
                     <div className="relative max-w-xs">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         step="0.1"
-                        min="0"
+                        min={0}
                         value={packagingCost}
-                        onChange={(e) => setPackagingCost(parseFloat(e.target.value) || 0)}
+                        onChange={(val) => setPackagingCost(val)}
                         className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-amber-300 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
                         placeholder="0.00"
                       />
@@ -975,12 +1010,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                   </div>
                   <div className="relative w-full sm:w-48">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
-                    <input
-                      type="number"
+                    <NumberInput
                       step="0.1"
-                      min="0"
+                      min={0}
                       value={accessoriesCost}
-                      onChange={(e) => setAccessoriesCost(parseFloat(e.target.value) || 0)}
+                      onChange={(val) => setAccessoriesCost(val)}
                       className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-2xs"
                       placeholder="0.00"
                     />
@@ -1057,13 +1091,12 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                 <div className="space-y-2 pt-1">
                   <div className="flex items-center gap-3">
                     <div className="relative flex-1 max-w-[180px]">
-                      <input
-                        type="number"
+                      <NumberInput
                         step="0.5"
-                        min="0"
-                        max="100"
+                        min={0}
+                        max={100}
                         value={customVariableCostPercent}
-                        onChange={(e) => setCustomVariableCostPercent(parseFloat(e.target.value) || 0)}
+                        onChange={(val) => setCustomVariableCostPercent(val)}
                         className="w-full px-3 pr-8 py-2 text-sm bg-white border border-indigo-300 rounded-lg font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-600 font-bold">%</span>

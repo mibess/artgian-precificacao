@@ -10,6 +10,7 @@ import {
   CustomPackagingAddon,
   calculatePackagingTotal
 } from "../types/pricing";
+import { NumberInput } from "./NumberInput";
 import { 
   Zap, 
   Printer as PrinterIcon, 
@@ -329,11 +330,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">R$</span>
-                <input
-                  type="number"
+                <NumberInput
                   step="0.01"
+                  min={0}
                   value={localSettings.energyKwhPrice}
-                  onChange={(e) => setLocalSettings({ ...localSettings, energyKwhPrice: parseFloat(e.target.value) || 0 })}
+                  onChange={(val) => setLocalSettings({ ...localSettings, energyKwhPrice: val })}
                   className="w-full pl-9 pr-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
@@ -346,11 +347,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">R$</span>
-                <input
-                  type="number"
+                <NumberInput
                   step="0.50"
+                  min={0}
                   value={localSettings.defaultFilamentPricePerKg}
-                  onChange={(e) => setLocalSettings({ ...localSettings, defaultFilamentPricePerKg: parseFloat(e.target.value) || 0 })}
+                  onChange={(val) => setLocalSettings({ ...localSettings, defaultFilamentPricePerKg: val })}
                   className="w-full pl-9 pr-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
@@ -362,11 +363,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Potência Média Padrão da Impressora (Watts)
               </label>
               <div className="relative">
-                <input
-                  type="number"
+                <NumberInput
                   step="5"
+                  min={0}
+                  allowDecimals={false}
                   value={localSettings.defaultPrinterWatts}
-                  onChange={(e) => setLocalSettings({ ...localSettings, defaultPrinterWatts: parseInt(e.target.value, 10) || 0 })}
+                  onChange={(val) => setLocalSettings({ ...localSettings, defaultPrinterWatts: Math.round(val) })}
                   className="w-full px-3 pr-8 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">W</span>
@@ -379,16 +381,70 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Custo Variável Padrão / Margem de Falha (%)
               </label>
               <div className="relative">
-                <input
-                  type="number"
+                <NumberInput
                   step="1"
+                  min={0}
+                  max={100}
                   value={localSettings.defaultVariableCostPercent}
-                  onChange={(e) => setLocalSettings({ ...localSettings, defaultVariableCostPercent: parseFloat(e.target.value) || 0 })}
+                  onChange={(val) => setLocalSettings({ ...localSettings, defaultVariableCostPercent: val })}
                   className="w-full px-3 pr-8 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">%</span>
               </div>
               <p className="text-[10px] text-slate-400 mt-1">Percentual base aplicado a todos os produtos que utilizam a margem padrão global do sistema.</p>
+            </div>
+
+            {/* Custo de Máquina por Hora */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Depreciação & Manutenção de Máquina (R$/hora)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">R$</span>
+                <NumberInput
+                  step="0.50"
+                  min={0}
+                  value={localSettings.machineCostPerHour || 0}
+                  onChange={(val) => setLocalSettings({ ...localSettings, machineCostPerHour: val })}
+                  className="w-full pl-9 pr-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Opcional. Cobre amortização, bicos, correias e peças de reposição por hora de impressão.</p>
+            </div>
+
+            {/* Mão de Obra por Hora */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Mão de Obra / Acabamento (R$/hora)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">R$</span>
+                <NumberInput
+                  step="1.00"
+                  min={0}
+                  value={localSettings.laborCostPerHour || 0}
+                  onChange={(val) => setLocalSettings({ ...localSettings, laborCostPerHour: val })}
+                  className="w-full pl-9 pr-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Opcional. Valor por hora de dedicação humana para acabamento, suporte e pintura.</p>
+            </div>
+
+            {/* Checkbox Perda sobre embalagem */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <div>
+                <label htmlFor="var-loss-packaging" className="text-xs font-semibold text-slate-700 cursor-pointer block">
+                  Taxa de perda sobre caixas & acessórios
+                </label>
+                <p className="text-[10px] text-slate-400">Aplica a taxa de falha também ao custo de embalagens e itens extras.</p>
+              </div>
+              <input
+                type="checkbox"
+                id="var-loss-packaging"
+                checked={localSettings.variableCostAppliesToPackaging !== false}
+                onChange={(e) => setLocalSettings({ ...localSettings, variableCostAppliesToPackaging: e.target.checked })}
+                className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+              />
             </div>
           </div>
         </div>
@@ -425,11 +481,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       Comissão (%)
                     </label>
                     <div className="relative">
-                      <input
-                        type="number"
+                      <NumberInput
                         step="0.5"
+                        min={0}
+                        max={100}
                         value={mp.commissionPercent}
-                        onChange={(e) => updateMarketplace(mp.id, "commissionPercent", parseFloat(e.target.value) || 0)}
+                        onChange={(val) => updateMarketplace(mp.id, "commissionPercent", val)}
                         className="w-full px-2.5 pr-6 py-1.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                       />
                       <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
@@ -442,11 +499,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </label>
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         step="0.5"
+                        min={0}
                         value={mp.fixedFee}
-                        onChange={(e) => updateMarketplace(mp.id, "fixedFee", parseFloat(e.target.value) || 0)}
+                        onChange={(val) => updateMarketplace(mp.id, "fixedFee", val)}
+                        className="w-full pl-7 pr-2 py-1.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                      Teto Máx. Comissão (R$)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
+                      <NumberInput
+                        step="5"
+                        min={0}
+                        placeholder="Opcional"
+                        value={mp.commissionCap || 0}
+                        onChange={(val) => updateMarketplace(mp.id, "commissionCap", val > 0 ? val : undefined)}
+                        className="w-full pl-7 pr-2 py-1.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                      Preço Mín. Taxa Fixa (R$)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
+                      <NumberInput
+                        step="5"
+                        min={0}
+                        placeholder="Opcional"
+                        value={mp.fixedFeeMinPrice || 0}
+                        onChange={(val) => updateMarketplace(mp.id, "fixedFeeMinPrice", val > 0 ? val : undefined)}
                         className="w-full pl-7 pr-2 py-1.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                       />
                     </div>
