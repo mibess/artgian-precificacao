@@ -30,6 +30,7 @@ import {
   fetchSettingsFromCloud,
   saveSettingsToCloud
 } from "./services/supabase";
+import { deleteProductImages } from "./services/productImages";
 import {
   getTabFromPath,
   getPathForTab,
@@ -351,6 +352,7 @@ export function App() {
       id: createId("prod"),
       name: `${prod.name} (Cópia)`,
       parts: prod.parts.map(p => ({ ...p, id: createId("part") })),
+      images: [], // a cópia não compartilha arquivos do S3 (excluir um apagaria a foto do outro)
       createdAt: now,
       updatedAt: now
     };
@@ -376,6 +378,7 @@ export function App() {
       const ok = await deleteProductFromCloud(productId);
       endSync();
       if (ok) {
+        void deleteProductImages(prod?.images || []);
         showToast(`"${prodName}" excluído com sucesso.`, "info");
       } else {
         showToast("Erro ao apagar da nuvem. Recarregue a página para ver o estado real.", "error");

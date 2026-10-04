@@ -80,6 +80,13 @@ export interface PackagingItem {
   customItems?: PackagingCustomItem[]; // Itens extras dinâmicos
 }
 
+/** Imagem de produto hospedada no S3. Guardamos só a chave; a URL pública é derivada do ambiente. */
+export interface ProductImage {
+  key: string;
+}
+
+export const MAX_PRODUCT_IMAGES = 3;
+
 export interface ProductItem {
   id: string;
   name: string;
@@ -95,6 +102,7 @@ export interface ProductItem {
   laborHours?: number; // Horas dedicadas de mão de obra / pós-processamento (default 0)
   variableCostPercent?: number | null; // null = usa o padrão global do sistema
   notes?: string;
+  images?: ProductImage[]; // até MAX_PRODUCT_IMAGES fotos do produto (S3)
   createdAt: string;
   updatedAt: string;
 }

@@ -7,6 +7,7 @@ import {
   Printer,
   PackagingItem,
   CustomPackagingAddon,
+  ProductImage,
   calculatePackagingTotal
 } from "../types/pricing";
 import {
@@ -22,6 +23,8 @@ import { createId } from "../utils/ids";
 import { parseTimeToHours, formatHoursToTimeString } from "../utils/timeParser";
 import { parseSlicerFile, parseSlicerText, SlicerParseResult } from "../utils/slicerParser";
 import { NumberInput } from "./NumberInput";
+import { ProductImagesField } from "./ProductImagesField";
+import { isImageStorageConfigured, deleteProductImages } from "../services/productImages";
 import { 
   ArrowLeft, 
   Save, 
@@ -143,6 +146,12 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   });
 
   const [notes, setNotes] = useState(product?.notes || "");
+
+  // Fotos (S3). Uploads são imediatos; o que sobra órfão (sair sem salvar / foto removida) é limpo depois.
+  const [images, setImages] = useState<ProductImage[]>(product?.images || []);
+  const originalImagesRef = useRef<ProductImage[]>(product?.images || []);
+  const sessionUploadsRef = useRef<ProductImage[]>([]);
+  const savedRef = useRef(false);
 
   // Partes
   const [parts, setParts] = useState<ProductPart[]>(
@@ -426,11 +435,12 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
     laborHours: Math.max(0, Number(laborHours) || 0),
     variableCostPercent: isCustomVariableCost ? (Number(customVariableCostPercent) || 0) : null,
     notes,
+    images,
     createdAt,
     updatedAt: createdAt
   }), [
     productId, name, category, quantityInBatch, isMultiPart, parts, isLinkedPackaging, selectedPkg, customAddons,
-    packagingCost, packagingMode, accessoriesCost, laborHours, isCustomVariableCost, customVariableCostPercent, notes, createdAt
+    packagingCost, packagingMode, accessoriesCost, laborHours, isCustomVariableCost, customVariableCostPercent, notes, images, createdAt
   ]);
 
   // Alterações não salvas: compara com o estado inicial do formulário
@@ -443,6 +453,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   }, [isDirty, onDirtyChange]);
 
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+  // Saiu da tela sem salvar: apaga do S3 as fotos enviadas nesta sessão de edição.
+  useEffect(() => () => {
+    if (!savedRef.current) void deleteProductImages(sessionUploadsRef.current);
+  }, []);
 
   // Cálculo ao vivo
   const pricing = useMemo(
@@ -468,6 +483,11 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
       alert("Por favor, preencha o nome do produto.");
       return;
     }
+    // Confirma o salvamento: fotos que existiam e foram removidas, e uploads descartados, saem do S3.
+    savedRef.current = true;
+    const kept = new Set(images.map(img => img.key));
+    const discarded = [...originalImagesRef.current, ...sessionUploadsRef.current].filter(img => !kept.has(img.key));
+    void deleteProductImages(discarded);
     onSave({ ...currentProduct, name: name.trim(), updatedAt: new Date().toISOString() });
   };
 
@@ -1327,6 +1347,16 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Fotos */}
+            {isImageStorageConfigured() && (
+              <ProductImagesField
+                productId={productId}
+                images={images}
+                onChange={setImages}
+                onUploaded={(image) => { sessionUploadsRef.current.push(image); }}
+              />
+            )}
 
             {/* Observações */}
             <div className="pt-2">

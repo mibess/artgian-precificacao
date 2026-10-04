@@ -118,7 +118,7 @@ const LEGACY_COLUMNS: Record<string, string[]> = {
   packaging_addons: ["owner_id"]
 };
 
-const MIGRATION_HINT = "supabase/migrations/20261005_cost_fields.sql";
+const MIGRATION_HINT = "as migrations de supabase/migrations/ (20261005_cost_fields.sql e 20261006_product_images.sql)";
 const knownMissingColumns = new Set<string>();
 let pendingSchemaWarning: string | null = null;
 

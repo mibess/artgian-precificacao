@@ -94,6 +94,38 @@ Ela adiciona as colunas de custo de máquina, mão de obra, regra de perda sobre
 Sem essa migration o app continua funcionando, mas esses campos não são gravados na nuvem:
 ao salvar, um aviso "Atualização do banco pendente" orienta a executá-la.
 
+### 3.2 Imagens de produto (S3)
+
+Cada produto aceita até **3 fotos**, hospedadas no seu bucket S3. O navegador nunca recebe credenciais da AWS:
+ele pede uma URL de upload pré-assinada à função `api/product-images.ts` (Vercel Function; em `npm run dev` o
+Vite executa o mesmo handler), que valida a sessão do Supabase e só permite chaves em `products/<id-do-usuário>/`.
+As fotos são reduzidas (máx. 1600 px) e convertidas para WebP no navegador antes do envio.
+
+1. Execute `supabase/migrations/20261006_product_images.sql` em cada banco (coluna `images`, com limite de 3).
+2. No bucket, libere **leitura pública** só do prefixo `products/*` (ou use CloudFront) e configure o **CORS**:
+
+```json
+[{
+  "AllowedOrigins": ["http://localhost:5173", "https://SEU-DOMINIO"],
+  "AllowedMethods": ["PUT"],
+  "AllowedHeaders": ["Content-Type", "Cache-Control"],
+  "MaxAgeSeconds": 3000
+}]
+```
+
+3. Crie um usuário IAM com permissão apenas `s3:PutObject` e `s3:DeleteObject` em `arn:aws:s3:::SEU-BUCKET/products/*`.
+4. Defina as variáveis (em `.env.development.local` / `.env.production.local` e no painel da Vercel):
+
+```env
+VITE_PRODUCT_IMAGES_BASE_URL=https://SEU-BUCKET.s3.REGIAO.amazonaws.com
+S3_BUCKET=SEU-BUCKET
+S3_REGION=REGIAO
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+```
+
+Sem `VITE_PRODUCT_IMAGES_BASE_URL` o campo de fotos fica oculto. Use buckets (ou credenciais) distintos em dev e produção.
+
 ### 4. Executar em desenvolvimento
 
 ```bash

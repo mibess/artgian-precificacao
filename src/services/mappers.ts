@@ -5,7 +5,9 @@ import {
   Filament,
   Printer,
   PackagingItem,
-  CustomPackagingAddon
+  CustomPackagingAddon,
+  ProductImage,
+  MAX_PRODUCT_IMAGES
 } from "../types/pricing";
 import { defaultSettings } from "../data/defaultData";
 import { formatHoursToTimeString } from "../utils/timeParser";
@@ -22,7 +24,7 @@ export type DbRow = Record<string, any>;
  * (migration pendente), o serviço tenta novamente sem elas em vez de falhar o salvamento.
  */
 export const OPTIONAL_COLUMNS: Record<string, string[]> = {
-  products: ["labor_hours", "packaging_mode"],
+  products: ["labor_hours", "packaging_mode", "images"],
   settings: ["machine_cost_per_hour", "labor_cost_per_hour", "variable_cost_applies_to_packaging"]
 };
 
@@ -49,6 +51,14 @@ function normalizePart(raw: any, index: number): ProductPart {
   };
 }
 
+function normalizeImages(raw: any): ProductImage[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(img => img && typeof img.key === "string" && img.key)
+    .slice(0, MAX_PRODUCT_IMAGES)
+    .map(img => ({ key: img.key as string }));
+}
+
 // ============ PRODUTOS ============
 
 export function rowToProduct(row: DbRow): ProductItem {
@@ -69,6 +79,7 @@ export function rowToProduct(row: DbRow): ProductItem {
       ? safeNumber(row.variable_cost_percent, 10)
       : null,
     notes: row.notes || "",
+    images: normalizeImages(row.images),
     createdAt: row.created_at || new Date().toISOString(),
     updatedAt: row.updated_at || new Date().toISOString()
   };
@@ -90,6 +101,7 @@ export function productToRow(product: ProductItem, ownerId?: string | null): DbR
     labor_hours: safeNumber(product.laborHours, 0),
     variable_cost_percent: typeof product.variableCostPercent === "number" ? product.variableCostPercent : null,
     notes: product.notes || "",
+    images: normalizeImages(product.images),
     created_at: product.createdAt,
     updated_at: new Date().toISOString()
   };

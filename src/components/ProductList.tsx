@@ -17,6 +17,7 @@ import {
   getPrimaryMarketplace,
   pickMarginRow
 } from "../utils/calculator";
+import { isImageStorageConfigured, productImageUrl } from "../services/productImages";
 import { 
   Search, 
   Plus, 
@@ -293,6 +294,15 @@ export const ProductList: React.FC<ProductListProps> = ({
                 key={product.id}
                 className="bg-white rounded-xl border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group"
               >
+                {isImageStorageConfigured() && product.images && product.images.length > 0 && (
+                  <img
+                    src={productImageUrl(product.images[0])}
+                    alt={product.name}
+                    loading="lazy"
+                    className="w-full h-40 object-cover border-b border-slate-100"
+                  />
+                )}
+
                 {/* Header */}
                 <div className="p-4 border-b border-slate-100">
                   <div className="flex items-start justify-between gap-2">
